@@ -1,0 +1,6 @@
+{
+  "name": "강원 필링 라이프 | Gangwon Feeling Life",
+  "description": "DID 모니터 설치부터 기획 분석 그리고 감각적인 영상 제작까지 적은 비용으로 매장의 분위기를 바꾸는 원스톱 미디어 솔루션.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
