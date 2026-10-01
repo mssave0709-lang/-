@@ -56,6 +56,11 @@ import {
   restoreAllInquiryTrash,
   deleteInquiry 
 } from '../utils/inquiryStorage';
+import { 
+  DEFAULT_PORTFOLIO_CATEGORIES, 
+  getStoredCustomCategories, 
+  saveStoredCustomCategories 
+} from '../utils/categoryStorage';
 import { parseVideoUrl } from '../utils/videoHelper';
 
 export const ALL_INDUSTRY_CATEGORIES = [
@@ -170,7 +175,8 @@ interface ConfirmDialogState {
     | 'permanent_delete_inquiry'
     | 'empty_inquiry_trash'
     | 'reset_defaults'
-    | 'discard_changes';
+    | 'discard_changes'
+    | 'delete_category';
   title: string;
   itemTitle: string;
   itemSubtitle?: string;
@@ -187,6 +193,8 @@ interface AdminModalProps {
   onSaveItems: (updatedItems: PortfolioItem[]) => void;
   isAdminLoggedIn: boolean;
   setIsAdminLoggedIn: (status: boolean) => void;
+  customCategories?: string[];
+  onSaveCustomCategories?: (categories: string[]) => void;
 }
 
 export const AdminModal: React.FC<AdminModalProps> = ({
@@ -195,8 +203,39 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   items,
   onSaveItems,
   isAdminLoggedIn,
-  setIsAdminLoggedIn
+  setIsAdminLoggedIn,
+  customCategories,
+  onSaveCustomCategories
 }) => {
+  // Category management panel state
+  const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState<boolean>(false);
+  const [newCategoryInput, setNewCategoryInput] = useState<string>('');
+
+  // Combined categories list (System default + custom created + current items)
+  const allCategories = React.useMemo(() => {
+    const list: string[] = [...DEFAULT_PORTFOLIO_CATEGORIES];
+    const categorySet = new Set<string>(DEFAULT_PORTFOLIO_CATEGORIES);
+
+    const customList = customCategories || getStoredCustomCategories();
+    customList.forEach((c) => {
+      const trimmed = c.trim();
+      if (trimmed && !categorySet.has(trimmed)) {
+        categorySet.add(trimmed);
+        list.push(trimmed);
+      }
+    });
+
+    items.forEach((item) => {
+      const trimmed = item.category?.trim();
+      if (trimmed && !categorySet.has(trimmed)) {
+        categorySet.add(trimmed);
+        list.push(trimmed);
+      }
+    });
+
+    return list;
+  }, [items, customCategories]);
+
   // Authentication state
   const [passwordInput, setPasswordInput] = useState<string>('');
   const [authError, setAuthError] = useState<string>('');
@@ -640,6 +679,20 @@ export const AdminModal: React.FC<AdminModalProps> = ({
         showToast(`'${updatedItem.title}' 작업영상이 성공적으로 수정되었습니다.`);
       }
 
+      // 새 카테고리인 경우 커스텀 카테고리 목록에 자동 추가 (홈페이지 작업물 탭에 즉시 생성 연동)
+      const trimmedCategory = formCategory.trim();
+      if (trimmedCategory && !DEFAULT_PORTFOLIO_CATEGORIES.includes(trimmedCategory)) {
+        const currentCustom = customCategories || getStoredCustomCategories();
+        if (!currentCustom.includes(trimmedCategory)) {
+          const updatedCustom = [...currentCustom, trimmedCategory];
+          if (onSaveCustomCategories) {
+            onSaveCustomCategories(updatedCustom);
+          } else {
+            saveStoredCustomCategories(updatedCustom);
+          }
+        }
+      }
+
       onSaveItems(newItemsList);
       setPendingVideoBlob(null);
       setIsEditing(false);
@@ -648,6 +701,57 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       console.error('Error saving portfolio form:', err);
       showToast('저장 처리 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
     }
+  };
+
+  // 새 카테고리 직접 추가 핸들러
+  const handleAddNewCategory = (catName: string) => {
+    const trimmed = catName.trim();
+    if (!trimmed) {
+      showToast('추가할 카테고리 이름을 입력해주세요.');
+      return;
+    }
+    if (allCategories.includes(trimmed)) {
+      showToast(`'${trimmed}' 카테고리는 이미 존재합니다.`);
+      return;
+    }
+
+    const currentCustom = customCategories || getStoredCustomCategories();
+    const updated = [...currentCustom, trimmed];
+    if (onSaveCustomCategories) {
+      onSaveCustomCategories(updated);
+    } else {
+      saveStoredCustomCategories(updated);
+    }
+    setNewCategoryInput('');
+    showToast(`'${trimmed}' 카테고리가 생성되었습니다. 홈페이지 '작업물' 탭에 즉시 반영됩니다.`);
+  };
+
+  // 커스텀 카테고리 삭제 핸들러
+  const handleRemoveCategory = (catName: string) => {
+    const activeCount = items.filter(i => !i.isDeleted && i.category === catName).length;
+    setConfirmDialog({
+      isOpen: true,
+      type: 'delete_category',
+      title: '카테고리 삭제',
+      itemTitle: `'${catName}' 카테고리 삭제`,
+      itemSubtitle: activeCount > 0 ? `현재 이 카테고리에 속한 작업 영상 ${activeCount}개가 있습니다.` : '현재 연결된 영상이 없습니다.',
+      warningText: activeCount > 0 
+        ? `이 카테고리를 삭제하시겠습니까? 해당 영상들의 정보는 유지되나, 홈페이지 '작업물' 탭 필터 목록에서 제외됩니다.`
+        : `이 카테고리를 삭제하시겠습니까? 홈페이지 '작업물' 탭 필터 목록에서 즉시 제거됩니다.`,
+      confirmLabel: '카테고리 삭제',
+      confirmColor: 'red',
+      onConfirm: () => {
+        const currentCustom = customCategories || getStoredCustomCategories();
+        const updated = currentCustom.filter(c => c !== catName);
+        if (onSaveCustomCategories) {
+          onSaveCustomCategories(updated);
+        } else {
+          saveStoredCustomCategories(updated);
+        }
+        showToast(`'${catName}' 카테고리가 삭제되었습니다.`);
+        setConfirmDialog(null);
+      }
+    });
   };
 
   // 1차 삭제: 영상을 휴지통으로 이동
@@ -1686,18 +1790,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                             💡 클릭하여 기본 분류 자동 채우기:
                           </div>
                           <div className="flex flex-wrap gap-1">
-                            {[
-                              '광고',
-                              '숏폼',
-                              '인포그래픽',
-                              '디지털 메뉴보드',
-                              '영상 카드뉴스',
-                              '카드뉴스',
-                              '브랜딩 동화',
-                              '3D 모션',
-                              '매장 사이니지',
-                              '기업 홍보'
-                            ].map((cat) => (
+                            {allCategories.map((cat) => (
                               <button
                                 key={cat}
                                 type="button"
@@ -2465,6 +2558,25 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
                       <button
                         type="button"
+                        onClick={() => setIsCategoryManagerOpen(!isCategoryManagerOpen)}
+                        className={`flex-1 sm:flex-initial justify-center flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg transition-colors cursor-pointer border ${
+                          isCategoryManagerOpen
+                            ? 'bg-orange-50 border-orange-300 text-[#EA580C]'
+                            : 'bg-neutral-100 hover:bg-neutral-200 border-neutral-200 text-neutral-700'
+                        }`}
+                        title="작업물 카테고리 실시간 생성 및 관리"
+                      >
+                        <Tag className="w-3.5 h-3.5 text-[#EA580C]" />
+                        <span>카테고리 관리</span>
+                        {allCategories.length > DEFAULT_PORTFOLIO_CATEGORIES.length && (
+                          <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-orange-100 text-[#EA580C] font-bold">
+                            +{allCategories.length - DEFAULT_PORTFOLIO_CATEGORIES.length}
+                          </span>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => {
                           setAdminTab('trash');
                           setTrashSubTab('portfolio');
@@ -2486,23 +2598,138 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                     </div>
                   </div>
 
+                  {/* Category Management Drawer / Card */}
+                  {isCategoryManagerOpen && (
+                    <div className="bg-white rounded-xl p-4 sm:p-5 border-2 border-orange-200 shadow-sm space-y-4 animate-in fade-in duration-150">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-neutral-100">
+                        <div>
+                          <div className="text-sm font-extrabold text-neutral-900 flex items-center gap-1.5">
+                            <Tag className="w-4 h-4 text-[#EA580C]" />
+                            <span>작업물 카테고리 실시간 생성 및 연동 관리</span>
+                          </div>
+                          <p className="text-xs text-neutral-500 mt-0.5">
+                            여기서 새 카테고리를 등록하거나 영상 추가 시 입력한 새로운 분류는, 웹사이트 <strong>'작업물' 탭 상단 카테고리 필터에 즉시 자동 생성</strong>되어 노출됩니다.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setIsCategoryManagerOpen(false)}
+                          className="self-end sm:self-center text-xs font-semibold text-neutral-500 hover:text-neutral-800 px-2 py-1 rounded hover:bg-neutral-100 cursor-pointer"
+                        >
+                          닫기
+                        </button>
+                      </div>
+
+                      {/* Add New Category Input Form */}
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        <div className="relative flex-1">
+                          <Tag className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            value={newCategoryInput}
+                            onChange={(e) => setNewCategoryInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddNewCategory(newCategoryInput);
+                              }
+                            }}
+                            placeholder="새로 추가할 카테고리 이름 입력 (예: 3D 모션 그래픽, 드론/항공 영상, 기업 홍보, 인터뷰/다큐)"
+                            className="w-full pl-9 pr-3 py-2 bg-neutral-50 text-neutral-900 placeholder:text-neutral-400 border border-neutral-300 rounded-lg text-xs font-bold focus:border-[#EA580C] focus:bg-white focus:outline-none"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleAddNewCategory(newCategoryInput)}
+                          className="px-4 py-2 bg-[#EA580C] hover:bg-[#C2410C] text-white text-xs font-extrabold rounded-lg shadow-sm transition-colors flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>+ 새 카테고리 생성</span>
+                        </button>
+                      </div>
+
+                      {/* Quick preset recommendations */}
+                      <div className="space-y-1.5">
+                        <div className="text-[11px] text-neutral-500 font-medium">
+                          💡 클릭하여 추천 카테고리 1초 만에 바로 추가:
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {[
+                            '3D 모션 그래픽',
+                            '드론/항공 영상',
+                            '기업/기관 홍보',
+                            '인터뷰/다큐멘터리',
+                            '유튜브/웹예능',
+                            '브랜드 필름',
+                            '미디어아트/전시',
+                            '교육/튜토리얼',
+                            '이벤트/프로모션'
+                          ]
+                            .filter(preset => !allCategories.includes(preset))
+                            .map((preset) => (
+                              <button
+                                key={preset}
+                                type="button"
+                                onClick={() => handleAddNewCategory(preset)}
+                                className="px-2.5 py-1 bg-neutral-100 hover:bg-orange-50 hover:text-[#EA580C] hover:border-orange-200 border border-neutral-200 text-neutral-700 text-xs font-bold rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                              >
+                                <Plus className="w-3 h-3 text-[#EA580C]" />
+                                <span>{preset}</span>
+                              </button>
+                            ))}
+                        </div>
+                      </div>
+
+                      {/* Current Categories List Badges */}
+                      <div className="space-y-2 pt-2 border-t border-neutral-100">
+                        <div className="text-xs font-bold text-neutral-700 flex items-center justify-between">
+                          <span>현재 활성화된 카테고리 목록 (총 {allCategories.length}개)</span>
+                          <span className="text-[11px] text-neutral-400 font-normal">
+                            * 홈페이지 '작업물' 탭 상단에 순서대로 노출됩니다.
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {allCategories.map((cat) => {
+                            const isDefault = DEFAULT_PORTFOLIO_CATEGORIES.includes(cat);
+                            const count = activePortfolioItems.filter(i => i.category === cat).length;
+                            return (
+                              <div
+                                key={cat}
+                                className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-2 ${
+                                  isDefault
+                                    ? 'bg-neutral-100 border-neutral-200 text-neutral-800'
+                                    : 'bg-orange-50 border-orange-200 text-[#EA580C]'
+                                }`}
+                              >
+                                <span>{cat}</span>
+                                <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
+                                  isDefault ? 'bg-neutral-200 text-neutral-600' : 'bg-orange-100 text-[#EA580C]'
+                                }`}>
+                                  {count}개
+                                </span>
+                                {!isDefault && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveCategory(cat)}
+                                    className="p-0.5 text-neutral-400 hover:text-red-600 rounded hover:bg-red-50 transition-colors ml-0.5 cursor-pointer"
+                                    title="카테고리 삭제"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Filter & Search Bar */}
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3 bg-neutral-50 p-2.5 sm:p-3 rounded-xl border border-neutral-200">
                     {/* Category Filter Pills */}
                     <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none text-xs">
-                      {Array.from(
-                        new Set([
-                          '전체',
-                          '광고',
-                          '숏폼',
-                          '인포그래픽',
-                          '디지털 메뉴보드',
-                          '영상 카드뉴스',
-                          '카드뉴스',
-                          '브랜딩 동화',
-                          ...activePortfolioItems.map((i) => i.category?.trim()).filter(Boolean)
-                        ])
-                      ).map((cat) => (
+                      {['전체', ...allCategories].map((cat) => (
                         <button
                           key={cat}
                           type="button"

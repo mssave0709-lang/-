@@ -16,6 +16,7 @@ import { AdminModal } from './components/AdminModal';
 import { PortfolioItem, NavigationTab } from './types';
 import { PORTFOLIO_ITEMS as DEFAULT_PORTFOLIO_ITEMS } from './data/portfolioData';
 import { getAllVideoBlobs } from './utils/indexedDbHelper';
+import { getStoredCustomCategories, saveStoredCustomCategories } from './utils/categoryStorage';
 
 const LOCAL_STORAGE_KEY = 'gfl_portfolio_items_v6';
 const ADMIN_SESSION_KEY = 'gfl_admin_session_auth';
@@ -23,6 +24,14 @@ const ADMIN_SESSION_KEY = 'gfl_admin_session_auth';
 export default function App() {
   const [activeTab, setActiveTab] = useState<NavigationTab>('home');
   const [inquiryPrefill, setInquiryPrefill] = useState<string>('');
+
+  // 1-1. Custom Categories State (영상 관리에서 신규 추가된 카테고리 실시간 연동)
+  const [customCategories, setCustomCategories] = useState<string[]>(() => getStoredCustomCategories());
+
+  const handleSaveCustomCategories = (updatedCategories: string[]) => {
+    setCustomCategories(updatedCategories);
+    saveStoredCustomCategories(updatedCategories);
+  };
 
   // 1. Dynamic Portfolio Items State with LocalStorage Persistence
   const [portfolioItems, setPortfolioItems] = useState<PortfolioItem[]>(() => {
@@ -96,6 +105,33 @@ export default function App() {
 
   const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
 
+  // Hidden admin entrance: Keyboard shortcut (Ctrl+Shift+A or Cmd+Shift+A) & URL Hash/Query (#admin)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
+        e.preventDefault();
+        setIsAdminModalOpen((prev) => !prev);
+      }
+    };
+
+    const checkAdminUrl = () => {
+      if (window.location.hash === '#admin' || window.location.search.includes('admin=true')) {
+        setIsAdminModalOpen(true);
+      }
+    };
+
+    checkAdminUrl();
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('hashchange', checkAdminUrl);
+    window.addEventListener('popstate', checkAdminUrl);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('hashchange', checkAdminUrl);
+      window.removeEventListener('popstate', checkAdminUrl);
+    };
+  }, []);
+
   // Sync admin auth status to session storage
   const handleSetAdminLoggedIn = (status: boolean) => {
     setIsAdminLoggedIn(status);
@@ -154,8 +190,6 @@ export default function App() {
       <Header 
         activeTab={activeTab}
         onTabChange={handleSwitchTab}
-        onOpenAdmin={() => setIsAdminModalOpen(true)}
-        isAdminLoggedIn={isAdminLoggedIn}
       />
 
       {/* 2. SPA Dynamic Content Area with Smooth Fade-in Animation */}
@@ -208,9 +242,7 @@ export default function App() {
                 items={activePortfolioItems}
                 onSelectItem={handleSelectWorkItem}
                 onOpenContact={() => handleSwitchTab('contact')}
-                isAdminLoggedIn={isAdminLoggedIn}
-                onOpenAdmin={() => setIsAdminModalOpen(true)}
-                onEditItemDirectly={() => setIsAdminModalOpen(true)}
+                customCategories={customCategories}
               />
             </motion.div>
           )}
@@ -249,6 +281,8 @@ export default function App() {
         onSaveItems={handleSavePortfolioItems}
         isAdminLoggedIn={isAdminLoggedIn}
         setIsAdminLoggedIn={handleSetAdminLoggedIn}
+        customCategories={customCategories}
+        onSaveCustomCategories={handleSaveCustomCategories}
       />
     </div>
   );

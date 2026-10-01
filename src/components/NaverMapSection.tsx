@@ -194,9 +194,30 @@ export const NaverMapSection: React.FC = () => {
               1724
             </text>
 
-            {/* Top Right: 정문 */}
-            <circle cx="450" cy="40" r="7" fill="#6A8098" />
-            <text x="450" y="30" textAnchor="middle" fill="#606E7D" fontSize="11" fontWeight="600" fontFamily="sans-serif">
+            {/* School Building: 원주중학교 (Prominent regional landmark) */}
+            <polygon
+              points="540,80 820,25 860,185 580,240"
+              fill="#FFFFFF"
+              stroke="#CCD3DA"
+              strokeWidth="1.2"
+            />
+            <text
+              x="700"
+              y="135"
+              textAnchor="middle"
+              fill="#2563EB"
+              fontSize="20"
+              fontWeight="700"
+              fontFamily="Pretendard, -apple-system, sans-serif"
+              letterSpacing="2"
+            >
+              원주중학교
+            </text>
+
+            {/* Path to 정문 */}
+            <line x1="435" y1="95" x2="480" y2="55" stroke="#CCD3DA" strokeWidth="2.5" />
+            <circle cx="485" cy="55" r="4" fill="#6A8098" />
+            <text x="485" y="45" textAnchor="middle" fill="#606E7D" fontSize="11" fontWeight="600" fontFamily="sans-serif">
               정문
             </text>
 
@@ -220,6 +241,14 @@ export const NaverMapSection: React.FC = () => {
             <circle cx="420" cy="458" r="1.2" fill="#FFFFFF" />
 
             {/* Surrounding Buildings (Left Side) */}
+            {/* Building northwest of 1721 */}
+            <polygon
+              points="310,120 410,95 425,170 325,195"
+              fill="#FFFFFF"
+              stroke="#CCD3DA"
+              strokeWidth="1"
+            />
+
             {/* Building 1721 */}
             <polygon
               points="230,205 295,190 310,250 245,265"

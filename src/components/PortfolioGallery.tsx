@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { PortfolioItem, PortfolioCategory } from '../types';
+import { DEFAULT_PORTFOLIO_CATEGORIES, getStoredCustomCategories } from '../utils/categoryStorage';
 import { 
   Play, 
   Pause, 
@@ -9,11 +10,11 @@ import {
   Phone, 
   Layers, 
   ArrowUpRight, 
-  Tag,
-  Sparkles,
-  Monitor,
-  ChevronLeft,
-  ChevronRight
+  Tag, 
+  Sparkles, 
+  Monitor, 
+  ChevronLeft, 
+  ChevronRight 
 } from 'lucide-react';
 import { parseVideoUrl } from '../utils/videoHelper';
 
@@ -21,15 +22,14 @@ interface PortfolioGalleryProps {
   items: PortfolioItem[];
   onSelectItem: (item: PortfolioItem) => void;
   onOpenContact: () => void;
-  isAdminLoggedIn?: boolean;
-  onOpenAdmin?: () => void;
-  onEditItemDirectly?: (item: PortfolioItem) => void;
+  customCategories?: string[];
 }
 
 export const PortfolioGallery: React.FC<PortfolioGalleryProps> = ({ 
   items, 
   onSelectItem, 
-  onOpenContact
+  onOpenContact,
+  customCategories
 }) => {
   const [selectedItem, setSelectedItem] = useState<PortfolioItem | null>(null);
   const [isPlayingPreview, setIsPlayingPreview] = useState<boolean>(false);
@@ -37,28 +37,32 @@ export const PortfolioGallery: React.FC<PortfolioGalleryProps> = ({
   const [activeCategory, setActiveCategory] = useState<PortfolioCategory>('전체보기');
   const [mediaViewMode, setMediaViewMode] = useState<'video' | 'stills'>('video');
 
-  // Dynamic filter tabs: 기본 카테고리 및 사용자가 직접 입력한 새 카테고리 자동 포함
-  const defaultCategories: string[] = [
-    '광고',
-    '숏폼',
-    '인포그래픽',
-    '디지털 메뉴보드',
-    '영상 카드뉴스',
-    '카드뉴스',
-    '브랜딩 동화'
-  ];
-  const customCategories = Array.from(
-    new Set(
-      items
-        .map((i) => i.category?.trim())
-        .filter((c): c is string => Boolean(c && !defaultCategories.includes(c)))
-    )
-  );
-  const filterTabs: PortfolioCategory[] = [
-    '전체보기',
-    ...defaultCategories,
-    ...customCategories
-  ];
+  // Dynamic filter tabs: 기본 카테고리 + 영상 관리에서 새로 생성된 카테고리 + 등록된 작업 영상의 카테고리 자동 연동
+  const filterTabs: PortfolioCategory[] = useMemo(() => {
+    const list: string[] = ['전체보기', ...DEFAULT_PORTFOLIO_CATEGORIES];
+    const categorySet = new Set<string>(DEFAULT_PORTFOLIO_CATEGORIES);
+
+    // 1. 영상 관리에서 추가된 커스텀 카테고리
+    const customList = customCategories || getStoredCustomCategories();
+    customList.forEach((c) => {
+      const trimmed = c.trim();
+      if (trimmed && !categorySet.has(trimmed)) {
+        categorySet.add(trimmed);
+        list.push(trimmed);
+      }
+    });
+
+    // 2. 현재 등록된 작업물들의 카테고리 (새 영상 등록 시 입력된 새 카테고리 포함)
+    items.forEach((item) => {
+      const trimmed = item.category?.trim();
+      if (trimmed && !categorySet.has(trimmed)) {
+        categorySet.add(trimmed);
+        list.push(trimmed);
+      }
+    });
+
+    return list;
+  }, [items, customCategories]);
 
   const handleOpenDetail = (item: PortfolioItem) => {
     setSelectedItem(item);

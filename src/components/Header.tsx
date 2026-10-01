@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, X, ArrowUpRight, Lock } from 'lucide-react';
+import { Menu, X, ArrowUpRight } from 'lucide-react';
 import { NavigationTab } from '../types';
 
 interface HeaderProps {
@@ -11,9 +11,7 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ 
   activeTab,
-  onTabChange,
-  onOpenAdmin,
-  isAdminLoggedIn
+  onTabChange
 }) => {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -90,22 +88,8 @@ export const Header: React.FC<HeaderProps> = ({
           })}
         </nav>
 
-        {/* Zone 3: Actions (Quick Inquiry CTA & Admin Portal) */}
+        {/* Zone 3: Actions (Quick Inquiry CTA) */}
         <div className="hidden md:flex items-center gap-2">
-          {onOpenAdmin && (
-            <button
-              onClick={onOpenAdmin}
-              className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-2 rounded-lg text-zinc-600 hover:text-zinc-950 hover:bg-zinc-100 transition-all cursor-pointer border border-zinc-200"
-              title="관리자 창구 열기"
-            >
-              <Lock className="w-3.5 h-3.5 text-zinc-500" />
-              <span>관리자 창구</span>
-              {isAdminLoggedIn && (
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              )}
-            </button>
-          )}
-
           <button
             onClick={() => handleNavClick('contact')}
             className="flex items-center gap-1.5 text-xs font-bold px-3.5 py-2 rounded-lg bg-zinc-950 hover:bg-zinc-800 text-white transition-all shadow-2xs cursor-pointer"
@@ -158,22 +142,6 @@ export const Header: React.FC<HeaderProps> = ({
             >
               원스톱 상담 및 견적 문의
             </button>
-
-            {onOpenAdmin && (
-              <button
-                onClick={() => {
-                  setMobileMenuOpen(false);
-                  onOpenAdmin();
-                }}
-                className="w-full text-center py-2.5 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 text-xs font-bold rounded-lg border border-zinc-200 transition-colors flex items-center justify-center gap-1.5"
-              >
-                <Lock className="w-3.5 h-3.5 text-zinc-500" />
-                <span>관리자 창구</span>
-                {isAdminLoggedIn && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                )}
-              </button>
-            )}
 
             {/* Mobile Channel Links (네이버 블로그, 유튜브, 인스타그램 원형 아이콘) */}
             <div className="pt-2 flex items-center justify-center gap-4">
