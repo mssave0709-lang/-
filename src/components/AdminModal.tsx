@@ -46,7 +46,17 @@ import {
   formatFileSize 
 } from '../utils/fileHelpers';
 import { saveVideoBlob, deleteVideoBlob } from '../utils/indexedDbHelper';
-import { getInquiries, updateInquiryStatus, deleteInquiry } from '../utils/inquiryStorage';
+import { 
+  getInquiries, 
+  updateInquiryStatus, 
+  trashInquiry, 
+  restoreInquiry, 
+  permanentlyDeleteInquiry, 
+  emptyInquiryTrash, 
+  restoreAllInquiryTrash,
+  deleteInquiry 
+} from '../utils/inquiryStorage';
+import { parseVideoUrl } from '../utils/videoHelper';
 
 export const ALL_INDUSTRY_CATEGORIES = [
   {
@@ -150,6 +160,26 @@ export const ALL_INDUSTRY_CATEGORIES = [
   }
 ];
 
+interface ConfirmDialogState {
+  isOpen: boolean;
+  type: 
+    | 'trash_item'
+    | 'permanent_delete_item'
+    | 'empty_video_trash'
+    | 'trash_inquiry'
+    | 'permanent_delete_inquiry'
+    | 'empty_inquiry_trash'
+    | 'reset_defaults'
+    | 'discard_changes';
+  title: string;
+  itemTitle: string;
+  itemSubtitle?: string;
+  warningText: string;
+  confirmLabel: string;
+  confirmColor?: 'red' | 'amber' | 'zinc';
+  onConfirm: () => void | Promise<void>;
+}
+
 interface AdminModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -223,15 +253,37 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   // Toast / Status state
   const [successToast, setSuccessToast] = useState<string>('');
 
-  // Top admin section tab: 'portfolio' | 'inquiries'
-  const [adminTab, setAdminTab] = useState<'portfolio' | 'inquiries'>('portfolio');
+  const showToast = (msg: string) => {
+    setSuccessToast(msg);
+    setTimeout(() => {
+      setSuccessToast('');
+    }, 3200);
+  };
+
+  // Custom in-app Confirmation Dialog state (replaces window.confirm)
+  const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+
+  // Top admin section tab: 'portfolio' | 'inquiries' | 'trash'
+  const [adminTab, setAdminTab] = useState<'portfolio' | 'inquiries' | 'trash'>('portfolio');
+  const [trashSubTab, setTrashSubTab] = useState<'portfolio' | 'inquiries'>('portfolio');
 
   // Inquiries state
   const [inquiries, setInquiries] = useState<ContactInquiry[]>(() => getInquiries());
   const [inquirySearch, setInquirySearch] = useState<string>('');
   const [inquiryStatusFilter, setInquiryStatusFilter] = useState<'all' | 'unread' | 'contacted'>('all');
 
-  const unreadCount = inquiries.filter(i => i.status === 'unread').length;
+  // Portfolio items separation (Active vs Trashed)
+  const activePortfolioItems = items.filter(i => !i.isDeleted);
+  const trashedPortfolioItems = items.filter(i => i.isDeleted);
+
+  // Inquiries separation (Active vs Trashed)
+  const activeInquiries = inquiries.filter(i => !i.isDeleted);
+  const trashedInquiries = inquiries.filter(i => i.isDeleted);
+
+  const unreadCount = activeInquiries.filter(i => i.status === 'unread').length;
+  const trashedVideosCount = trashedPortfolioItems.length;
+  const trashedInquiriesCount = trashedInquiries.length;
+  const totalTrashCount = trashedVideosCount + trashedInquiriesCount;
 
   const reloadInquiries = () => {
     setInquiries(getInquiries());
@@ -252,12 +304,24 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     showToast(nextStatus === 'contacted' ? '상담 완료 상태로 변경되었습니다.' : '미확인 상태로 변경되었습니다.');
   };
 
-  const handleDeleteInquiryItem = (id: string, customerName: string) => {
-    if (window.confirm(`'${customerName}' 님의 문의 내역을 영구 삭제하시겠습니까?`)) {
-      const updated = deleteInquiry(id);
-      setInquiries(updated);
-      showToast('문의 내역이 삭제되었습니다.');
-    }
+  // 1차 삭제: 고객 문의를 휴지통으로 이동
+  const handleRequestTrashInquiry = (inq: ContactInquiry) => {
+    setConfirmDialog({
+      isOpen: true,
+      type: 'trash_inquiry',
+      title: '문의 내역 휴지통 이동 (1차 삭제)',
+      itemTitle: `'${inq.nameOrStore}' 님의 문의`,
+      itemSubtitle: `연락처: ${inq.phone} (${inq.createdAt})`,
+      warningText: '해당 문의 내역을 휴지통으로 이동하시겠습니까? 메인 목록에서 숨겨지며, [휴지통] 탭에서 언제든지 복원하거나 영구 삭제할 수 있습니다.',
+      confirmLabel: '휴지통으로 이동',
+      confirmColor: 'amber',
+      onConfirm: () => {
+        const updated = trashInquiry(inq.id);
+        setInquiries(updated);
+        showToast(`'${inq.nameOrStore}' 님의 문의가 휴지통으로 이동되었습니다.`);
+        setConfirmDialog(null);
+      }
+    });
   };
 
   const handleCopyPhone = (phone: string) => {
@@ -284,11 +348,21 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
   const handleSafeClose = () => {
     if (isEditing) {
-      if (window.confirm('작성 중인 작업물이 있습니다. 창을 닫으시겠습니까? (저장되지 않은 내용은 취소됩니다)')) {
-        setIsEditing(false);
-        setEditingItem(null);
-        onClose();
-      }
+      setConfirmDialog({
+        isOpen: true,
+        type: 'discard_changes',
+        title: '작업 내용 닫기',
+        itemTitle: isNewItem ? '새 작업 영상 작성 중' : `'${editingItem?.title}' 수정 중`,
+        itemSubtitle: '저장하지 않은 입력 내용과 첨부 파일이 모두 취소됩니다.',
+        warningText: '저장하지 않고 창을 닫으시겠습니까?',
+        confirmLabel: '저장 안 하고 닫기',
+        onConfirm: () => {
+          setIsEditing(false);
+          setEditingItem(null);
+          setConfirmDialog(null);
+          onClose();
+        }
+      });
     } else {
       onClose();
     }
@@ -301,17 +375,10 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
   if (!isOpen) return null;
 
-  const showToast = (msg: string) => {
-    setSuccessToast(msg);
-    setTimeout(() => {
-      setSuccessToast('');
-    }, 3200);
-  };
-
   // Thumbnail File Upload Handler
   const handleThumbnailFileSelect = async (file: File) => {
     if (!file.type.startsWith('image/')) {
-      alert('이미지 파일(JPG, PNG, WebP 등)을 선택해주세요.');
+      showToast('이미지 파일(JPG, PNG, WebP 등)을 선택해주세요.');
       return;
     }
     try {
@@ -322,7 +389,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       showToast(`'${file.name}' 대표 썸네일 이미지가 직접 첨부되었습니다.`);
     } catch (e) {
       console.error(e);
-      alert('썸네일 이미지 처리 중 오류가 발생했습니다.');
+      showToast('썸네일 이미지 처리 중 오류가 발생했습니다.');
     } finally {
       setIsProcessingThumbnail(false);
     }
@@ -331,7 +398,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   // Video File Upload Handler
   const handleVideoFileSelect = async (file: File) => {
     if (!file.type.startsWith('video/') && !file.name.match(/\.(mp4|webm|mov|ogg|m4v|avi|mkv)$/i)) {
-      alert('동영상 파일(MP4, WebM, MOV 등)을 선택해주세요.');
+      showToast('동영상 파일(MP4, WebM, MOV 등)을 선택해주세요.');
       return;
     }
     try {
@@ -345,7 +412,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       showToast(`'${file.name}' 동영상 파일이 직접 첨부되었습니다. 재생 확인 가능합니다.`);
     } catch (e) {
       console.error(e);
-      alert('동영상 파일 처리 중 오류가 발생했습니다.');
+      showToast('동영상 파일 처리 중 오류가 발생했습니다.');
     } finally {
       setIsProcessingVideo(false);
     }
@@ -354,7 +421,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   // Capture frame from active playing video as thumbnail
   const handleCaptureVideoThumbnail = () => {
     if (!videoPreviewRef.current) {
-      alert('비디오 플레이어를 찾을 수 없습니다.');
+      showToast('비디오 플레이어를 찾을 수 없습니다.');
       return;
     }
     const captured = captureVideoFrame(videoPreviewRef.current);
@@ -363,7 +430,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       setThumbnailFileName('동영상 현재 프레임 캡처본');
       showToast('영상의 현재 화면이 대표 썸네일로 자동 추출되었습니다!');
     } else {
-      alert('영상을 재생 중인 상태에서 캡처 버튼을 눌러주세요.');
+      showToast('영상을 재생 중인 상태에서 캡처 버튼을 눌러주세요.');
     }
   };
 
@@ -372,7 +439,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     const fileArray = Array.from(files);
     const imageFiles = fileArray.filter(f => f.type.startsWith('image/'));
     if (imageFiles.length === 0) {
-      alert('이미지 파일(JPG, PNG, WebP 등)을 선택해주세요.');
+      showToast('이미지 파일(JPG, PNG, WebP 등)을 선택해주세요.');
       return;
     }
     try {
@@ -388,7 +455,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       showToast(`${imageFiles.length}개의 스틸컷 이미지가 성공적으로 추가 첨부되었습니다.`);
     } catch (e) {
       console.error(e);
-      alert('스틸컷 이미지 처리 중 오류가 발생했습니다.');
+      showToast('스틸컷 이미지 처리 중 오류가 발생했습니다.');
     } finally {
       setIsProcessingFrames(false);
     }
@@ -513,7 +580,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const handleSaveForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formTitle.trim() || !formClientOrStore.trim()) {
-      alert('제목과 클라이언트/상호명을 입력해주세요.');
+      showToast('영상 제목과 기업/상호명을 입력해주세요.');
       return;
     }
 
@@ -579,28 +646,174 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       setEditingItem(null);
     } catch (err) {
       console.error('Error saving portfolio form:', err);
-      alert('저장 처리 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+      showToast('저장 처리 중 일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
     }
   };
 
-  // Delete an item
-  const handleDeleteItem = async (item: PortfolioItem) => {
-    if (window.confirm(`'${item.title}' 포트폴리오를 삭제하시겠습니까?`)) {
-      if (item.hasCustomVideo) {
-        try {
-          await deleteVideoBlob(item.id);
-        } catch (err) {
-          console.warn('Failed to delete video blob from storage:', err);
+  // 1차 삭제: 영상을 휴지통으로 이동
+  const handleRequestTrashItem = (item: PortfolioItem) => {
+    setConfirmDialog({
+      isOpen: true,
+      type: 'trash_item',
+      title: '휴지통으로 이동 (1차 삭제)',
+      itemTitle: `'${item.title}'`,
+      itemSubtitle: `기업/상호: ${item.clientOrStore} · 카테고리: ${item.category}`,
+      warningText: '이 작업 영상을 휴지통으로 이동하시겠습니까? 홈페이지 및 메인 관리 목록에서 즉시 숨겨지며, [휴지통] 탭에서 언제든지 복원하거나 영구 삭제할 수 있습니다.',
+      confirmLabel: '휴지통으로 이동',
+      confirmColor: 'amber',
+      onConfirm: () => {
+        const now = new Date();
+        const formattedDate = now.toLocaleString('ko-KR', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        const updated = items.map(i => 
+          i.id === item.id 
+            ? { ...i, isDeleted: true, deletedAt: formattedDate } 
+            : i
+        );
+        onSaveItems(updated);
+        if (editingItem && editingItem.id === item.id) {
+          setIsEditing(false);
+          setEditingItem(null);
         }
+        showToast(`'${item.title}' 영상이 휴지통으로 이동되었습니다.`);
+        setConfirmDialog(null);
       }
-      const newItemsList = items.filter(i => i.id !== item.id);
-      onSaveItems(newItemsList);
-      showToast(`'${item.title}' 작업영상이 삭제되었습니다.`);
-    }
+    });
   };
 
-  // Filtered inquiries list
-  const filteredInquiries = inquiries.filter((inq) => {
+  // 휴지통에서 영상 복원
+  const handleRestoreVideo = (item: PortfolioItem) => {
+    const updated = items.map(i => 
+      i.id === item.id 
+        ? { ...i, isDeleted: false, deletedAt: undefined } 
+        : i
+    );
+    onSaveItems(updated);
+    showToast(`'${item.title}' 영상이 정상 복원되었습니다.`);
+  };
+
+  // 영상 영구 삭제 (2차 삭제)
+  const handleRequestPermanentDeleteVideo = (item: PortfolioItem) => {
+    setConfirmDialog({
+      isOpen: true,
+      type: 'permanent_delete_item',
+      title: '작업 영상 영구 삭제 (2차 최종 삭제)',
+      itemTitle: `'${item.title}'`,
+      itemSubtitle: `기업/상호: ${item.clientOrStore} · 카테고리: ${item.category}`,
+      warningText: '⚠️ 경고: 이 작업 영상 포트폴리오를 완전히 영구 삭제하시겠습니까? 첨부된 비디오 및 관련 스틸컷 정보가 데이터베이스에서 영구히 삭제되며 절대 복구할 수 없습니다.',
+      confirmLabel: '영구 삭제',
+      confirmColor: 'red',
+      onConfirm: async () => {
+        if (item.hasCustomVideo) {
+          try {
+            await deleteVideoBlob(item.id);
+          } catch (err) {
+            console.warn('Failed to delete video blob from storage:', err);
+          }
+        }
+        const updated = items.filter(i => i.id !== item.id);
+        onSaveItems(updated);
+        showToast(`'${item.title}' 영상이 완전히 영구 삭제되었습니다.`);
+        setConfirmDialog(null);
+      }
+    });
+  };
+
+  // 영상 휴지통 전체 비우기
+  const handleRequestEmptyVideoTrash = () => {
+    setConfirmDialog({
+      isOpen: true,
+      type: 'empty_video_trash',
+      title: '영상 휴지통 전체 비우기',
+      itemTitle: `삭제 대기 영상 총 ${trashedPortfolioItems.length}개`,
+      itemSubtitle: '휴지통에 보관된 모든 영상이 영구히 삭제됩니다.',
+      warningText: '⚠️ 영상 휴지통을 비우시겠습니까? 보관 중인 모든 영상과 첨부 파일이 완전히 영구 삭제되며 복구할 수 없습니다.',
+      confirmLabel: '영상 휴지통 비우기',
+      confirmColor: 'red',
+      onConfirm: async () => {
+        for (const item of trashedPortfolioItems) {
+          if (item.hasCustomVideo) {
+            try {
+              await deleteVideoBlob(item.id);
+            } catch {}
+          }
+        }
+        const updated = items.filter(i => !i.isDeleted);
+        onSaveItems(updated);
+        showToast('영상 휴지통이 모두 비워졌습니다.');
+        setConfirmDialog(null);
+      }
+    });
+  };
+
+  // 영상 전체 복원
+  const handleRestoreAllVideos = () => {
+    const updated = items.map(i => i.isDeleted ? { ...i, isDeleted: false, deletedAt: undefined } : i);
+    onSaveItems(updated);
+    showToast(`휴지통의 영상 ${trashedPortfolioItems.length}개가 모두 복원되었습니다.`);
+  };
+
+  // 문의 복원
+  const handleRestoreInquiry = (inq: ContactInquiry) => {
+    const updated = restoreInquiry(inq.id);
+    setInquiries(updated);
+    showToast(`'${inq.nameOrStore}' 님의 문의가 정상 복원되었습니다.`);
+  };
+
+  // 문의 영구 삭제 (2차 삭제)
+  const handleRequestPermanentDeleteInquiry = (inq: ContactInquiry) => {
+    setConfirmDialog({
+      isOpen: true,
+      type: 'permanent_delete_inquiry',
+      title: '고객 문의 영구 삭제 (2차 최종 삭제)',
+      itemTitle: `'${inq.nameOrStore}' 님의 문의`,
+      itemSubtitle: `연락처: ${inq.phone} (${inq.createdAt})`,
+      warningText: '⚠️ 경고: 해당 고객 상담 기록을 완전히 영구 삭제하시겠습니까? 데이터베이스에서 영구히 삭제되며 절대 복구할 수 없습니다.',
+      confirmLabel: '영구 삭제',
+      confirmColor: 'red',
+      onConfirm: () => {
+        const updated = permanentlyDeleteInquiry(inq.id);
+        setInquiries(updated);
+        showToast(`'${inq.nameOrStore}' 님의 문의가 완전히 영구 삭제되었습니다.`);
+        setConfirmDialog(null);
+      }
+    });
+  };
+
+  // 문의 휴지통 전체 비우기
+  const handleRequestEmptyInquiryTrash = () => {
+    setConfirmDialog({
+      isOpen: true,
+      type: 'empty_inquiry_trash',
+      title: '문의 휴지통 전체 비우기',
+      itemTitle: `삭제 대기 문의 총 ${trashedInquiries.length}개`,
+      itemSubtitle: '휴지통에 보관된 모든 고객 문의 기록이 영구히 삭제됩니다.',
+      warningText: '⚠️ 문의 휴지통을 비우시겠습니까? 보관 중인 모든 문의 기록이 완전히 영구 삭제되며 복구할 수 없습니다.',
+      confirmLabel: '문의 휴지통 비우기',
+      confirmColor: 'red',
+      onConfirm: () => {
+        const updated = emptyInquiryTrash();
+        setInquiries(updated);
+        showToast('문의 휴지통이 모두 비워졌습니다.');
+        setConfirmDialog(null);
+      }
+    });
+  };
+
+  // 문의 전체 복원
+  const handleRestoreAllInquiries = () => {
+    const updated = restoreAllInquiryTrash();
+    setInquiries(updated);
+    showToast(`휴지통의 문의 ${trashedInquiries.length}건이 모두 복원되었습니다.`);
+  };
+
+  // Filtered inquiries list (Only active inquiries that are not in trash)
+  const filteredInquiries = activeInquiries.filter((inq) => {
     const matchesStatus = 
       inquiryStatusFilter === 'all' 
         ? true 
@@ -616,12 +829,22 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     return matchesStatus && matchesSearch;
   });
 
-  // Reset to default sample items
-  const handleResetToDefaults = () => {
-    if (window.confirm('모든 포트폴리오 데이터를 초기 기본 상태로 복원하시겠습니까?')) {
-      onSaveItems(DEFAULT_PORTFOLIO_ITEMS);
-      showToast('기본 포트폴리오 데이터로 초기화되었습니다.');
-    }
+  // Reset to default sample items with safe in-app confirmation
+  const handleRequestResetToDefaults = () => {
+    setConfirmDialog({
+      isOpen: true,
+      type: 'reset_defaults',
+      title: '포트폴리오 초기 데이터 복원',
+      itemTitle: '초기 기본 샘플 데이터 전체 복원',
+      itemSubtitle: '현재 등록 또는 수정된 모든 작업물이 초기 기본 샘플로 교체됩니다.',
+      warningText: '모든 포트폴리오 데이터를 초기 기본 상태로 복원하시겠습니까? 직접 등록하신 영상 목록이 초기화됩니다.',
+      confirmLabel: '초기 상태로 복원',
+      onConfirm: () => {
+        onSaveItems(DEFAULT_PORTFOLIO_ITEMS);
+        showToast('기본 포트폴리오 데이터로 초기화되었습니다.');
+        setConfirmDialog(null);
+      }
+    });
   };
 
   return (
@@ -676,22 +899,22 @@ export const AdminModal: React.FC<AdminModalProps> = ({
           </div>
         </div>
 
-        {/* Admin Navigation Tabs (포트폴리오 영상 관리 vs 고객 문의 내역) */}
+        {/* Admin Navigation Tabs (영상 관리 vs 고객 문의 vs 휴지통) */}
         {isAdminLoggedIn && (
-          <div className="bg-[#111827] text-white px-3 sm:px-6 flex items-center gap-1 sm:gap-2 border-b border-neutral-800 shrink-0">
+          <div className="bg-[#111827] text-white px-3 sm:px-6 flex items-center gap-1 sm:gap-2 border-b border-neutral-800 shrink-0 overflow-x-auto">
             <button
               type="button"
               onClick={() => {
                 setAdminTab('portfolio');
               }}
-              className={`flex-1 sm:flex-initial justify-center px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-bold flex items-center gap-1.5 sm:gap-2 border-b-2 transition-all cursor-pointer ${
+              className={`flex-1 sm:flex-initial justify-center px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-bold flex items-center gap-1.5 sm:gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
                 adminTab === 'portfolio'
                   ? 'border-white text-white bg-neutral-800/60'
                   : 'border-transparent text-neutral-400 hover:text-neutral-200'
               }`}
             >
               <Film className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-              <span>영상 관리 ({items.length})</span>
+              <span>영상 관리 ({activePortfolioItems.length})</span>
             </button>
 
             <button
@@ -700,7 +923,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 setAdminTab('inquiries');
                 setIsEditing(false);
               }}
-              className={`flex-1 sm:flex-initial justify-center px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-bold flex items-center gap-1.5 sm:gap-2 border-b-2 transition-all cursor-pointer ${
+              className={`flex-1 sm:flex-initial justify-center px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-bold flex items-center gap-1.5 sm:gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
                 adminTab === 'inquiries'
                   ? 'border-white text-white bg-neutral-800/60'
                   : 'border-transparent text-neutral-400 hover:text-neutral-200'
@@ -714,7 +937,32 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 </span>
               ) : (
                 <span className="text-[10px] sm:text-[11px] text-neutral-400 font-mono">
-                  ({inquiries.length})
+                  ({activeInquiries.length})
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setAdminTab('trash');
+                setIsEditing(false);
+              }}
+              className={`flex-1 sm:flex-initial justify-center px-3 sm:px-4 py-2.5 sm:py-3 text-xs sm:text-sm font-bold flex items-center gap-1.5 sm:gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+                adminTab === 'trash'
+                  ? 'border-amber-400 text-amber-300 bg-neutral-800/60'
+                  : 'border-transparent text-neutral-400 hover:text-neutral-200'
+              }`}
+            >
+              <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+              <span>휴지통</span>
+              {totalTrashCount > 0 ? (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] sm:text-[11px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                  {totalTrashCount}
+                </span>
+              ) : (
+                <span className="text-[10px] sm:text-[11px] text-neutral-500 font-mono">
+                  (0)
                 </span>
               )}
             </button>
@@ -790,7 +1038,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   <div className="bg-white p-4 rounded-xl border border-neutral-200 shadow-2xs flex items-center justify-between">
                     <div>
                       <div className="text-xs font-bold text-neutral-500">전체 접수 문의</div>
-                      <div className="text-2xl font-black text-neutral-900 mt-0.5">{inquiries.length}건</div>
+                      <div className="text-2xl font-black text-neutral-900 mt-0.5">{activeInquiries.length}건</div>
                     </div>
                     <div className="w-10 h-10 rounded-xl bg-neutral-100 text-neutral-700 flex items-center justify-center">
                       <Inbox className="w-5 h-5" />
@@ -811,7 +1059,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                     <div>
                       <div className="text-xs font-bold text-emerald-600">상담 완료</div>
                       <div className="text-2xl font-black text-emerald-600 mt-0.5">
-                        {inquiries.length - unreadCount}건
+                        {Math.max(0, activeInquiries.length - unreadCount)}건
                       </div>
                     </div>
                     <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
@@ -822,8 +1070,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
                 {/* 2. Filter & Search Controls */}
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white p-3.5 rounded-xl border border-neutral-200 shadow-2xs">
-                  {/* Status Filter Buttons */}
-                  <div className="flex items-center gap-1.5 text-xs">
+                  {/* Status Filter Buttons & Trash Shortcut */}
+                  <div className="flex items-center gap-1.5 text-xs flex-wrap">
                     <button
                       type="button"
                       onClick={() => setInquiryStatusFilter('all')}
@@ -833,7 +1081,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                           : 'bg-neutral-100 text-neutral-600 hover:bg-neutral-200'
                       }`}
                     >
-                      전체 ({inquiries.length})
+                      전체 ({activeInquiries.length})
                     </button>
                     <button
                       type="button"
@@ -855,7 +1103,20 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                           : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200'
                       }`}
                     >
-                      상담완료 ({inquiries.length - unreadCount})
+                      상담완료 ({Math.max(0, activeInquiries.length - unreadCount)})
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAdminTab('trash');
+                        setTrashSubTab('inquiries');
+                      }}
+                      className="px-2.5 py-1.5 rounded-lg font-semibold text-neutral-600 bg-neutral-100 hover:bg-neutral-200 transition-colors flex items-center gap-1 cursor-pointer"
+                      title="문의 휴지통 열기"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-neutral-500" />
+                      <span>휴지통 ({trashedInquiriesCount})</span>
                     </button>
                   </div>
 
@@ -977,12 +1238,15 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                                 {isUnread ? '상담 완료 처리' : '미확인으로 되돌리기'}
                               </button>
 
-                              {/* Delete Inquiry */}
+                              {/* Move Inquiry to Trash (1차 삭제) */}
                               <button
                                 type="button"
-                                onClick={() => handleDeleteInquiryItem(inq.id, inq.nameOrStore)}
-                                className="p-1.5 text-neutral-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                                title="문의 삭제"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRequestTrashInquiry(inq);
+                                }}
+                                className="p-1.5 text-neutral-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                                title="휴지통으로 이동"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -1001,6 +1265,293 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                     })
                   )}
                 </div>
+              </div>
+            ) : adminTab === 'trash' ? (
+              /* 3. Recycle Bin (휴지통) Mode */
+              <div className="space-y-4 sm:space-y-5">
+                {/* Subtab Navigation: 영상 휴지통 vs 문의 휴지통 */}
+                <div className="flex flex-col xs:flex-row items-stretch xs:items-center justify-between gap-2.5 pb-2 border-b border-neutral-200">
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setTrashSubTab('portfolio')}
+                      className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                        trashSubTab === 'portfolio'
+                          ? 'bg-neutral-900 text-white shadow-sm'
+                          : 'bg-white text-neutral-600 border border-neutral-200 hover:bg-neutral-100'
+                      }`}
+                    >
+                      <Film className="w-4 h-4 shrink-0" />
+                      <span>삭제된 작업 영상</span>
+                      <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-mono font-bold ${
+                        trashSubTab === 'portfolio' ? 'bg-neutral-800 text-neutral-200' : 'bg-neutral-100 text-neutral-600'
+                      }`}>
+                        {trashedVideosCount}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setTrashSubTab('inquiries')}
+                      className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                        trashSubTab === 'inquiries'
+                          ? 'bg-neutral-900 text-white shadow-sm'
+                          : 'bg-white text-neutral-600 border border-neutral-200 hover:bg-neutral-100'
+                      }`}
+                    >
+                      <MessageSquare className="w-4 h-4 shrink-0" />
+                      <span>삭제된 고객 문의</span>
+                      <span className={`px-1.5 py-0.2 rounded-full text-[11px] font-mono font-bold ${
+                        trashSubTab === 'inquiries' ? 'bg-neutral-800 text-neutral-200' : 'bg-neutral-100 text-neutral-600'
+                      }`}>
+                        {trashedInquiriesCount}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2-Stage Safe Delete Info Guide Banner */}
+                <div className="bg-amber-50/90 border border-amber-200/90 rounded-xl p-3.5 sm:p-4 text-xs text-amber-950 flex items-start gap-3 shadow-2xs">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="leading-relaxed">
+                    <p className="font-extrabold text-amber-900 mb-0.5">
+                      안심 2단계 삭제 및 복원 시스템 (휴지통 보관소)
+                    </p>
+                    <p className="text-amber-800/90 font-normal">
+                      1차 삭제된 항목은 사용자 웹사이트 화면에서 즉시 숨겨지며, 이곳 휴지통에 안전하게 보관됩니다. 
+                      실수로 삭제되었거나 다시 게시할 영상/문의는 <strong>[복원]</strong> 버튼으로 즉각 복구할 수 있으며, 
+                      완전히 제거하려면 <strong>[영구 삭제]</strong>를 진행해주세요.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Action Bar for Current Subtab */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 sm:p-4 rounded-xl border border-neutral-200 shadow-2xs">
+                  <div>
+                    <div className="text-xs sm:text-sm font-bold text-neutral-900 flex items-center gap-2">
+                      <Trash2 className="w-4 h-4 text-neutral-500" />
+                      {trashSubTab === 'portfolio' ? (
+                        <span>보관 중인 삭제 영상 총 <strong className="text-neutral-950 font-black">{trashedVideosCount}</strong>개</span>
+                      ) : (
+                        <span>보관 중인 삭제 문의 총 <strong className="text-neutral-950 font-black">{trashedInquiriesCount}</strong>건</span>
+                      )}
+                    </div>
+                    <div className="text-[11px] sm:text-xs text-neutral-500 mt-0.5">
+                      휴지통에 있는 항목은 2차 영구 삭제하기 전까지 안전하게 보관됩니다.
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {trashSubTab === 'portfolio' ? (
+                      trashedVideosCount > 0 && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={handleRestoreAllVideos}
+                            className="px-3 py-1.5 text-xs font-bold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>영상 전체 복원</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleRequestEmptyVideoTrash}
+                            className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>영상 휴지통 비우기</span>
+                          </button>
+                        </>
+                      )
+                    ) : (
+                      trashedInquiriesCount > 0 && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={handleRestoreAllInquiries}
+                            className="px-3 py-1.5 text-xs font-bold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>문의 전체 복원</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleRequestEmptyInquiryTrash}
+                            className="px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>문의 휴지통 비우기</span>
+                          </button>
+                        </>
+                      )
+                    )}
+                  </div>
+                </div>
+
+                {/* SubTab 1: Trashed Portfolio Videos */}
+                {trashSubTab === 'portfolio' && (
+                  <div className="space-y-3">
+                    {trashedPortfolioItems.length === 0 ? (
+                      <div className="bg-white rounded-xl p-12 text-center border border-neutral-200 shadow-2xs space-y-3">
+                        <div className="w-12 h-12 rounded-full bg-neutral-100 text-neutral-400 flex items-center justify-center mx-auto">
+                          <Trash2 className="w-6 h-6" />
+                        </div>
+                        <div className="text-sm font-bold text-neutral-800">
+                          영상 휴지통이 비어 있습니다.
+                        </div>
+                        <p className="text-xs text-neutral-500">
+                          '영상 관리' 탭에서 삭제된 작업 영상이 이곳에 보관됩니다.
+                        </p>
+                      </div>
+                    ) : (
+                      trashedPortfolioItems.map((item) => (
+                        <div
+                          key={item.id}
+                          className="bg-white rounded-xl p-3.5 sm:p-4 border border-neutral-200 hover:border-neutral-300 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4 transition-all"
+                        >
+                          {/* Thumbnail & Video Info */}
+                          <div className="flex items-start sm:items-center gap-3 sm:gap-4 flex-1 min-w-0 w-full">
+                            <div className="relative w-20 sm:w-24 aspect-[16/9] rounded-lg overflow-hidden bg-black shrink-0 border border-neutral-200 opacity-80">
+                              <img 
+                                src={item.videoThumbnail} 
+                                alt={item.title} 
+                                className="w-full h-full object-cover grayscale"
+                              />
+                              <span className="absolute bottom-1 right-1 text-[9px] font-mono px-1 py-0.2 bg-black/80 text-white rounded">
+                                {item.duration?.split(' ')[0] || '영상'}
+                              </span>
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 sm:gap-2 mb-1 flex-wrap">
+                                <span className="text-[10px] sm:text-[11px] font-bold text-neutral-600 bg-neutral-100 px-1.5 py-0.5 rounded shrink-0">
+                                  {item.badge}
+                                </span>
+                                <span className="text-xs text-neutral-500 font-medium truncate">
+                                  {item.clientOrStore}
+                                </span>
+                                {item.deletedAt && (
+                                  <span className="text-[10px] sm:text-[11px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                    🗑️ 삭제 일시: {item.deletedAt}
+                                  </span>
+                                )}
+                              </div>
+
+                              <h5 className="text-sm sm:text-base font-bold text-neutral-900 truncate">
+                                {item.title}
+                              </h5>
+
+                              <div className="text-[11px] sm:text-xs text-neutral-500 mt-1 flex flex-wrap items-center gap-1.5 sm:gap-2">
+                                <span>규격: {item.videoFormat?.split(' ')[0] || '16:9'}</span>
+                                <span>·</span>
+                                <span>{item.category}</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Actions: Restore or Permanent Delete */}
+                          <div className="flex items-center gap-2 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-neutral-100 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handleRestoreVideo(item)}
+                              className="flex-1 sm:flex-initial justify-center flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer"
+                              title="원래 목록으로 복원"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>복원</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRequestPermanentDeleteVideo(item)}
+                              className="flex-1 sm:flex-initial justify-center flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors cursor-pointer"
+                              title="영구 삭제"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>영구 삭제</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {/* SubTab 2: Trashed Inquiries */}
+                {trashSubTab === 'inquiries' && (
+                  <div className="space-y-3.5">
+                    {trashedInquiries.length === 0 ? (
+                      <div className="bg-white rounded-xl p-12 text-center border border-neutral-200 shadow-2xs space-y-3">
+                        <div className="w-12 h-12 rounded-full bg-neutral-100 text-neutral-400 flex items-center justify-center mx-auto">
+                          <Trash2 className="w-6 h-6" />
+                        </div>
+                        <div className="text-sm font-bold text-neutral-800">
+                          문의 휴지통이 비어 있습니다.
+                        </div>
+                        <p className="text-xs text-neutral-500">
+                          '고객 문의' 탭에서 삭제된 상담 내역이 이곳에 보관됩니다.
+                        </p>
+                      </div>
+                    ) : (
+                      trashedInquiries.map((inq) => (
+                        <div
+                          key={inq.id}
+                          className="bg-white rounded-xl border border-neutral-200 p-4 sm:p-5 shadow-2xs hover:shadow-md transition-all"
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-neutral-100">
+                            <div className="flex items-center gap-2.5 flex-wrap">
+                              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600">
+                                {inq.status === 'unread' ? '미확인 문의' : '상담 완료'}
+                              </span>
+
+                              <h5 className="text-base font-black text-neutral-900 flex items-center gap-1.5">
+                                <User className="w-4 h-4 text-neutral-400" />
+                                <span>{inq.nameOrStore}</span>
+                              </h5>
+
+                              <span className="text-xs text-neutral-500 font-mono">
+                                📞 {inq.phone}
+                              </span>
+
+                              {inq.deletedAt && (
+                                <span className="text-[10px] sm:text-[11px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                  🗑️ 삭제 일시: {inq.deletedAt}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => handleRestoreInquiry(inq)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors cursor-pointer"
+                                title="원래 목록으로 복원"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                <span>복원</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRequestPermanentDeleteInquiry(inq)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors cursor-pointer"
+                                title="영구 삭제"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>영구 삭제</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 bg-neutral-50 rounded-xl p-3.5 border border-neutral-200/70">
+                            <div className="text-xs font-bold text-neutral-500 mb-1">문의 내용:</div>
+                            <p className="text-sm text-neutral-700 font-normal leading-relaxed whitespace-pre-wrap break-keep">
+                              {inq.message || '(내용 없음)'}
+                            </p>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               /* Portfolio Management Mode */
@@ -1027,65 +1578,68 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
                   <form onSubmit={handleSaveForm} noValidate className="space-y-5">
                     {/* Category Notice Banner */}
-                    <div className="bg-orange-50/70 border border-orange-200/80 rounded-xl p-3 sm:p-3.5 flex items-start gap-2.5 sm:gap-3">
+                    <div className="bg-orange-50/80 border border-orange-200 rounded-xl p-3 sm:p-3.5 flex items-start gap-2.5 sm:gap-3">
                       <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-[#EA580C] shrink-0 mt-0.5" />
                       <div className="text-[11px] sm:text-xs text-neutral-700 leading-relaxed break-keep">
-                        <strong className="text-neutral-900 font-extrabold">전 산업군 카테고리 무제한 지원:</strong> 매장 영상뿐만 아니라 <strong>IT, 스마트팜, 제조, 뷰티, 의료, 공공, 기업홍보</strong> 등 모든 품목의 영상을 등록할 수 있습니다. 아래 프리셋에서 선택하거나 원하는 카테고리를 직접 자유롭게 입력하세요.
+                        <strong className="text-neutral-900 font-extrabold">카테고리 직접 쓰기 지원:</strong> 
+                        <strong>카테고리 배지</strong>와 <strong>포트폴리오 분류 카테고리</strong> 2개 항목 모두 원하는 단어를 직접 자유롭게 타이핑할 수 있습니다. 새로 입력한 분류는 홈페이지 상단 필터 탭에 자동으로 즉시 생성되어 분류됩니다.
                       </div>
                     </div>
 
-                    {/* Quick Category Chips */}
-                    <div>
-                      <label className="block text-xs font-bold text-neutral-600 mb-1.5 flex items-center gap-1.5">
-                        <Tag className="w-3.5 h-3.5 text-[#EA580C] shrink-0" />
-                        <span>빠른 산업군 선택 (클릭 시 자동 적용)</span>
-                      </label>
-                      <div className="flex flex-wrap gap-1.5">
-                        {[
-                          '[IT/소프트웨어]',
-                          '[농업/스마트팜]',
-                          '[제조/생산]',
-                          '[식음료]',
-                          '[카페/음료]',
-                          '[뷰티/코스메틱]',
-                          '[의료/병원]',
-                          '[공공/지자체]',
-                          '[기업홍보/브랜딩]',
-                          '[브랜딩 동화]',
-                          '[스마트팩토리/로봇]',
-                          '[특산물/로컬푸드]'
-                        ].map((cat) => (
-                          <button
-                            key={cat}
-                            type="button"
-                            onClick={() => setFormBadge(cat)}
-                            className={`px-2 py-1 rounded-md text-[11px] sm:text-xs font-bold transition-all ${
-                              formBadge === cat 
-                                ? 'bg-[#EA580C] text-white shadow-sm ring-2 ring-orange-200' 
-                                : 'bg-neutral-100 hover:bg-neutral-200 text-neutral-700'
-                            }`}
-                          >
-                            {cat}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Row 1: Badge & Category */}
+                    {/* Row 1: Category Badge & Portfolio Classification Category (Both Directly Writable) */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-bold text-neutral-700 mb-1.5">
-                          카테고리 배지 (직접 입력 가능) <span className="text-zinc-600">*</span>
-                        </label>
-                        <div className="space-y-1.5">
-                          <input
-                            type="text"
-                            required
-                            value={formBadge}
-                            onChange={(e) => setFormBadge(e.target.value)}
-                            placeholder="예: [IT/소프트웨어] 또는 [자유입력]"
-                            className="w-full px-3.5 py-2.5 bg-neutral-50 text-neutral-900 placeholder:text-neutral-400 border border-neutral-300 rounded-lg text-sm font-black focus:border-neutral-900 focus:outline-none"
-                          />
+                      {/* 1. 카테고리 배지 (직접 쓰기) */}
+                      <div className="bg-neutral-50 p-3.5 sm:p-4 rounded-xl border border-neutral-200 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <label className="block text-xs font-bold text-neutral-800">
+                            1. 카테고리 배지 (직접 쓰기) <span className="text-[#EA580C]">*</span>
+                          </label>
+                          <span className="text-[10px] text-neutral-500 font-medium bg-neutral-200/60 px-1.5 py-0.5 rounded">
+                            영상 카드 노출 배지
+                          </span>
+                        </div>
+                        <input
+                          type="text"
+                          required
+                          value={formBadge}
+                          onChange={(e) => setFormBadge(e.target.value)}
+                          placeholder="예: [광고], [IT/소프트웨어], [스마트팜], [자유입력]"
+                          className="w-full px-3.5 py-2.5 bg-white text-neutral-900 placeholder:text-neutral-400 border border-neutral-300 rounded-lg text-sm font-black focus:border-[#EA580C] focus:ring-1 focus:ring-[#EA580C] focus:outline-none"
+                        />
+                        <div className="space-y-1.5 pt-0.5">
+                          <div className="text-[11px] text-neutral-500 font-medium">
+                            💡 클릭하여 배지 자동 채우기:
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {[
+                              '[광고]',
+                              '[숏폼]',
+                              '[디지털 메뉴보드]',
+                              '[인포그래픽]',
+                              '[영상 카드뉴스]',
+                              '[카드뉴스]',
+                              '[브랜딩 동화]',
+                              '[IT/소프트웨어]',
+                              '[스마트팜]',
+                              '[제조/생산]',
+                              '[뷰티/헤어]',
+                              '[의료/병원]',
+                              '[기업홍보/브랜딩]'
+                            ].map((badge) => (
+                              <button
+                                key={badge}
+                                type="button"
+                                onClick={() => setFormBadge(badge)}
+                                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
+                                  formBadge === badge
+                                    ? 'bg-[#EA580C] text-white shadow-2xs'
+                                    : 'bg-white hover:bg-neutral-200 text-neutral-700 border border-neutral-200'
+                                }`}
+                              >
+                                {badge}
+                              </button>
+                            ))}
+                          </div>
                           <select
                             onChange={(e) => {
                               if (e.target.value) {
@@ -1093,9 +1647,9 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                               }
                             }}
                             defaultValue=""
-                            className="w-full px-2.5 py-1.5 bg-white text-neutral-900 border border-neutral-200 rounded text-xs focus:border-neutral-900 focus:outline-none"
+                            className="w-full px-2.5 py-1.5 bg-white text-neutral-900 border border-neutral-200 rounded text-xs focus:border-[#EA580C] focus:outline-none mt-1"
                           >
-                            <option value="" disabled>▼ 전 품목 산업 카테고리 프리셋 목록</option>
+                            <option value="" disabled>▼ 전체 산업군 카테고리 프리셋 목록 (선택 시 자동 입력)</option>
                             {ALL_INDUSTRY_CATEGORIES.map((grp) => (
                               <optgroup key={grp.group} label={`── ${grp.group} ──`}>
                                 {grp.options.map((opt) => (
@@ -1109,28 +1663,64 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         </div>
                       </div>
 
-                      <div>
-                        <label className="block text-xs font-bold text-neutral-700 mb-1.5">
-                          포트폴리오 분류 카테고리 <span className="text-zinc-600">*</span>
-                        </label>
-                        <select
+                      {/* 2. 포트폴리오 분류 카테고리 (직접 쓰기) */}
+                      <div className="bg-neutral-50 p-3.5 sm:p-4 rounded-xl border border-neutral-200 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <label className="block text-xs font-bold text-neutral-800">
+                            2. 포트폴리오 분류 카테고리 (직접 쓰기) <span className="text-[#EA580C]">*</span>
+                          </label>
+                          <span className="text-[10px] text-neutral-500 font-medium bg-neutral-200/60 px-1.5 py-0.5 rounded">
+                            홈페이지 필터 탭 연동
+                          </span>
+                        </div>
+                        <input
+                          type="text"
+                          required
                           value={formCategory}
-                          onChange={(e) => setFormCategory(e.target.value as PortfolioItemCategory)}
-                          className="w-full px-3.5 py-2.5 bg-neutral-50 text-neutral-900 border border-neutral-300 rounded-lg text-sm focus:border-neutral-900 focus:outline-none font-semibold"
-                        >
-                          <option value="광고">광고</option>
-                          <option value="숏폼">숏폼</option>
-                          <option value="인포그래픽">인포그래픽</option>
-                          <option value="디지털 메뉴보드">디지털 메뉴보드</option>
-                          <option value="영상 카드뉴스">영상 카드뉴스</option>
-                          <option value="카드뉴스">카드뉴스</option>
-                          <option value="브랜딩 동화">브랜딩 동화</option>
-                        </select>
-                        <div className="text-[11px] text-neutral-400 mt-1">
-                          갤러리 상단 필터 탭에 매칭되는 핵심 분류입니다.
+                          onChange={(e) => setFormCategory(e.target.value)}
+                          placeholder="예: 광고, 숏폼, 디지털 메뉴보드, 3D 모션 등 직접 타이핑"
+                          className="w-full px-3.5 py-2.5 bg-white text-neutral-900 placeholder:text-neutral-400 border border-neutral-300 rounded-lg text-sm font-black focus:border-[#EA580C] focus:ring-1 focus:ring-[#EA580C] focus:outline-none"
+                        />
+                        <div className="space-y-1.5 pt-0.5">
+                          <div className="text-[11px] text-neutral-500 font-medium">
+                            💡 클릭하여 기본 분류 자동 채우기:
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {[
+                              '광고',
+                              '숏폼',
+                              '인포그래픽',
+                              '디지털 메뉴보드',
+                              '영상 카드뉴스',
+                              '카드뉴스',
+                              '브랜딩 동화',
+                              '3D 모션',
+                              '매장 사이니지',
+                              '기업 홍보'
+                            ].map((cat) => (
+                              <button
+                                key={cat}
+                                type="button"
+                                onClick={() => setFormCategory(cat)}
+                                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
+                                  formCategory === cat
+                                    ? 'bg-[#EA580C] text-white shadow-2xs'
+                                    : 'bg-white hover:bg-neutral-200 text-neutral-700 border border-neutral-200'
+                                }`}
+                              >
+                                {cat}
+                              </button>
+                            ))}
+                          </div>
+                          <p className="text-[11px] text-neutral-500 pt-1 leading-relaxed">
+                            * 새로운 분류를 직접 적으시면, 홈페이지 작업물 탭 상단에 <strong>해당 카테고리 필터 버튼이 자동으로 추가</strong>됩니다.
+                          </p>
                         </div>
                       </div>
+                    </div>
 
+                    {/* Row 2: Target Industry Tag & Client/Store Name */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-xs font-bold text-neutral-700 mb-1.5">
                           타겟 업종 태그 <span className="text-zinc-600">*</span>
@@ -1439,24 +2029,82 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                             )}
                           </div>
                         ) : (
-                          /* Video External URL Input */
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              value={formVideoUrl}
-                              onChange={(e) => setFormVideoUrl(e.target.value)}
-                              placeholder="https://example.com/video.mp4 또는 비디오 링크"
-                              className="flex-1 min-w-0 px-3 py-2 bg-white text-neutral-900 placeholder:text-neutral-400 border border-neutral-300 rounded-lg text-xs font-mono focus:border-neutral-900 focus:outline-none"
-                            />
-                            {formVideoUrl && (
-                              <button
-                                type="button"
-                                onClick={() => setFormVideoUrl('')}
-                                className="shrink-0 px-3 py-2 bg-neutral-200 hover:bg-neutral-300 rounded-lg text-xs font-bold text-neutral-700"
-                              >
-                                비우기
-                              </button>
-                            )}
+                          /* Video External URL Input (YouTube, Vimeo, MP4 Direct Link) */
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={formVideoUrl}
+                                onChange={(e) => setFormVideoUrl(e.target.value)}
+                                placeholder="예: https://youtu.be/xxx 또는 https://vimeo.com/xxx 또는 https://example.com/video.mp4"
+                                className="flex-1 min-w-0 px-3.5 py-2.5 bg-white text-neutral-900 placeholder:text-neutral-400 border border-neutral-300 rounded-lg text-xs font-mono focus:border-neutral-900 focus:outline-none"
+                              />
+                              {formVideoUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => setFormVideoUrl('')}
+                                  className="shrink-0 px-3 py-2.5 bg-neutral-200 hover:bg-neutral-300 rounded-lg text-xs font-bold text-neutral-700 transition-colors"
+                                >
+                                  비우기
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Helpful Tips */}
+                            <div className="text-[11px] text-neutral-500 bg-neutral-100 p-2.5 rounded-lg border border-neutral-200 flex items-start gap-1.5 leading-relaxed">
+                              <Sparkles className="w-3.5 h-3.5 text-[#EA580C] shrink-0 mt-0.5" />
+                              <span>
+                                <strong>💡 추천 가이드:</strong> 유튜브에 <strong>'일부공개'</strong>로 영상을 올린 후 링크를 여기에 복사해 넣으시면, <strong>서버 트래픽 과부하 및 비용 부담 0원</strong>으로 버퍼링 없는 고화질 스트리밍이 지원됩니다.
+                              </span>
+                            </div>
+
+                            {/* Live Video Preview for External URL */}
+                            {formVideoUrl && (() => {
+                              const parsed = parseVideoUrl(formVideoUrl);
+                              return (
+                                <div className="bg-black/95 rounded-xl p-3 border border-neutral-300 space-y-2.5">
+                                  <div className="flex items-center justify-between text-xs pb-1">
+                                    <div className="flex items-center gap-2">
+                                      {parsed.type === 'youtube' && (
+                                        <span className="px-2 py-0.5 rounded bg-red-600 text-white font-bold text-[10px]">
+                                          YouTube 감지됨 (트래픽 0원)
+                                        </span>
+                                      )}
+                                      {parsed.type === 'vimeo' && (
+                                        <span className="px-2 py-0.5 rounded bg-blue-600 text-white font-bold text-[10px]">
+                                          Vimeo 감지됨 (고화질)
+                                        </span>
+                                      )}
+                                      {parsed.type === 'direct' && (
+                                        <span className="px-2 py-0.5 rounded bg-neutral-700 text-white font-bold text-[10px]">
+                                          직접 비디오 링크 (Direct MP4)
+                                        </span>
+                                      )}
+                                      <span className="text-neutral-300 text-[11px]">미리보기 확인</span>
+                                    </div>
+                                  </div>
+
+                                  <div className="relative aspect-[16/9] w-full max-h-56 mx-auto rounded-lg overflow-hidden bg-black flex items-center justify-center border border-neutral-800">
+                                    {parsed.type === 'youtube' || parsed.type === 'vimeo' ? (
+                                      <iframe
+                                        src={parsed.embedUrl}
+                                        title="외부 영상 미리보기"
+                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                        allowFullScreen
+                                        className="w-full h-full border-0"
+                                      />
+                                    ) : (
+                                      <video
+                                        src={parsed.originalUrl}
+                                        controls
+                                        playsInline
+                                        className="w-full h-full object-contain"
+                                      />
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
                         )}
                       </div>
@@ -1758,21 +2406,35 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                     </div>
 
                     {/* Actions */}
-                    <div className="pt-4 border-t border-neutral-200 flex flex-col-reverse sm:flex-row justify-end gap-2.5 sm:gap-3">
-                      <button
-                        type="button"
-                        onClick={() => setIsEditing(false)}
-                        className="w-full sm:w-auto px-5 py-2.5 rounded-lg border border-neutral-300 text-sm font-bold text-neutral-700 hover:bg-neutral-100 transition-colors text-center"
-                      >
-                        취소
-                      </button>
-                      <button
-                        type="submit"
-                        className="w-full sm:w-auto px-6 py-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-sm font-extrabold text-white shadow flex items-center justify-center gap-1.5 transition-colors text-center"
-                      >
-                        <Save className="w-4 h-4" />
-                        <span>저장하기</span>
-                      </button>
+                    <div className="pt-4 border-t border-neutral-200 flex flex-col-reverse sm:flex-row items-center justify-between gap-2.5 sm:gap-3">
+                      <div>
+                        {!isNewItem && editingItem && (
+                          <button
+                            type="button"
+                            onClick={() => handleRequestTrashItem(editingItem)}
+                            className="w-full sm:w-auto px-4 py-2.5 rounded-lg border border-amber-300 text-sm font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4 text-amber-600" />
+                            <span>휴지통으로 이동</span>
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                        <button
+                          type="button"
+                          onClick={() => setIsEditing(false)}
+                          className="flex-1 sm:flex-initial px-5 py-2.5 rounded-lg border border-neutral-300 text-sm font-bold text-neutral-700 hover:bg-neutral-100 transition-colors text-center cursor-pointer"
+                        >
+                          취소
+                        </button>
+                        <button
+                          type="submit"
+                          className="flex-1 sm:flex-initial px-6 py-2.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-sm font-extrabold text-white shadow flex items-center justify-center gap-1.5 transition-colors text-center cursor-pointer"
+                        >
+                          <Save className="w-4 h-4" />
+                          <span>저장하기</span>
+                        </button>
+                      </div>
                     </div>
                   </form>
                 </div>
@@ -1783,21 +2445,35 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 sm:p-4 rounded-xl border border-neutral-200 shadow-sm">
                     <div>
                       <div className="text-sm font-bold text-neutral-900">
-                        등록된 작업 영상 총 <strong className="text-neutral-900">{items.length}</strong>개
+                        등록된 작업 영상 총 <strong className="text-neutral-900">{activePortfolioItems.length}</strong>개
                       </div>
                       <div className="text-[11px] sm:text-xs text-neutral-500">
                         여기서 추가하거나 수정한 내용은 웹사이트에 즉시 반영됩니다.
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 w-full sm:w-auto">
+                    <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
                       <button
-                        onClick={handleResetToDefaults}
-                        className="flex-1 sm:flex-initial justify-center flex items-center gap-1 px-3 py-2 text-xs font-semibold text-neutral-600 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors"
+                        type="button"
+                        onClick={handleRequestResetToDefaults}
+                        className="flex-1 sm:flex-initial justify-center flex items-center gap-1 px-3 py-2 text-xs font-semibold text-neutral-600 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors cursor-pointer"
                         title="기본 샘플 데이터로 복원"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
                         <span>기본 복원</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAdminTab('trash');
+                          setTrashSubTab('portfolio');
+                        }}
+                        className="flex-1 sm:flex-initial justify-center flex items-center gap-1 px-3 py-2 text-xs font-semibold text-neutral-600 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors cursor-pointer"
+                        title="영상 휴지통 열기"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-neutral-500" />
+                        <span>휴지통 ({trashedVideosCount})</span>
                       </button>
 
                       <button
@@ -1814,7 +2490,19 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3 bg-neutral-50 p-2.5 sm:p-3 rounded-xl border border-neutral-200">
                     {/* Category Filter Pills */}
                     <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none text-xs">
-                      {['전체', '광고', '숏폼', '인포그래픽', '디지털 메뉴보드', '영상 카드뉴스', '카드뉴스', '브랜딩 동화'].map((cat) => (
+                      {Array.from(
+                        new Set([
+                          '전체',
+                          '광고',
+                          '숏폼',
+                          '인포그래픽',
+                          '디지털 메뉴보드',
+                          '영상 카드뉴스',
+                          '카드뉴스',
+                          '브랜딩 동화',
+                          ...activePortfolioItems.map((i) => i.category?.trim()).filter(Boolean)
+                        ])
+                      ).map((cat) => (
                         <button
                           key={cat}
                           type="button"
@@ -1845,7 +2533,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
                   {/* Portfolio Items List Cards */}
                   <div className="space-y-3">
-                    {items
+                    {activePortfolioItems
                       .filter((item) => {
                         const matchesSearch = 
                           listSearchQuery.trim() === '' ||
@@ -1912,17 +2600,23 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         {/* Right: Actions */}
                         <div className="flex items-center gap-2 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-neutral-100 shrink-0">
                           <button
+                            type="button"
                             onClick={() => handleStartEdit(item)}
-                            className="flex-1 sm:flex-initial justify-center flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors"
+                            className="flex-1 sm:flex-initial justify-center flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors cursor-pointer"
                           >
                             <Edit3 className="w-3.5 h-3.5 text-blue-600" />
                             <span>수정</span>
                           </button>
                           <button
-                            onClick={() => handleDeleteItem(item)}
-                            className="flex-1 sm:flex-initial justify-center flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRequestTrashItem(item);
+                            }}
+                            className="flex-1 sm:flex-initial justify-center flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-neutral-600 hover:text-amber-700 bg-neutral-100 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                            title="휴지통으로 이동"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-3.5 h-3.5 text-neutral-500 hover:text-amber-600" />
                             <span>삭제</span>
                           </button>
                         </div>
@@ -1950,6 +2644,83 @@ export const AdminModal: React.FC<AdminModalProps> = ({
             닫기
           </button>
         </div>
+
+        {/* Custom Confirmation Modal (Replaces blocked window.confirm) */}
+        {confirmDialog && confirmDialog.isOpen && (
+          <div 
+            className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150"
+            onClick={(e) => {
+              e.stopPropagation();
+              setConfirmDialog(null);
+            }}
+          >
+            <div 
+              className="bg-white rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl border border-neutral-200 space-y-4 animate-in zoom-in-95 duration-150"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start gap-3.5">
+                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
+                  confirmDialog.confirmColor === 'red' || confirmDialog.type.includes('permanent') || confirmDialog.type.includes('empty')
+                    ? 'bg-red-100 text-red-600'
+                    : confirmDialog.confirmColor === 'amber' || confirmDialog.type.includes('trash')
+                    ? 'bg-amber-100 text-amber-700'
+                    : 'bg-neutral-100 text-neutral-700'
+                }`}>
+                  {confirmDialog.type.includes('permanent') || confirmDialog.type.includes('empty') ? (
+                    <Trash2 className="w-5 h-5 text-red-600" />
+                  ) : confirmDialog.type.includes('trash') ? (
+                    <Trash2 className="w-5 h-5 text-amber-600" />
+                  ) : (
+                    <AlertCircle className="w-5 h-5 text-neutral-600" />
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h4 className="text-base font-black text-neutral-900 leading-snug">
+                    {confirmDialog.title}
+                  </h4>
+                  <p className="text-sm font-bold text-neutral-800 mt-1 truncate">
+                    {confirmDialog.itemTitle}
+                  </p>
+                  {confirmDialog.itemSubtitle && (
+                    <p className="text-xs text-neutral-500 mt-0.5 whitespace-pre-line line-clamp-2">
+                      {confirmDialog.itemSubtitle}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-neutral-50 p-3 rounded-xl border border-neutral-200 text-xs text-neutral-600 leading-relaxed break-keep">
+                {confirmDialog.warningText}
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDialog(null)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 transition-colors cursor-pointer"
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await confirmDialog.onConfirm();
+                  }}
+                  className={`px-4 py-2.5 rounded-xl text-xs font-black text-white shadow-sm transition-all flex items-center gap-1.5 cursor-pointer ${
+                    confirmDialog.confirmColor === 'red' || confirmDialog.type.includes('permanent') || confirmDialog.type.includes('empty')
+                      ? 'bg-red-600 hover:bg-red-700 active:scale-95'
+                      : confirmDialog.confirmColor === 'amber' || confirmDialog.type.includes('trash')
+                      ? 'bg-amber-600 hover:bg-amber-700 active:scale-95'
+                      : 'bg-neutral-900 hover:bg-black active:scale-95'
+                  }`}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{confirmDialog.confirmLabel}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
       </div>
     </div>

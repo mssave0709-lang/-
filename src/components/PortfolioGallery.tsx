@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
+import { parseVideoUrl } from '../utils/videoHelper';
 
 interface PortfolioGalleryProps {
   items: PortfolioItem[];
@@ -36,8 +37,8 @@ export const PortfolioGallery: React.FC<PortfolioGalleryProps> = ({
   const [activeCategory, setActiveCategory] = useState<PortfolioCategory>('전체보기');
   const [mediaViewMode, setMediaViewMode] = useState<'video' | 'stills'>('video');
 
-  const filterTabs: PortfolioCategory[] = [
-    '전체보기',
+  // Dynamic filter tabs: 기본 카테고리 및 사용자가 직접 입력한 새 카테고리 자동 포함
+  const defaultCategories: string[] = [
     '광고',
     '숏폼',
     '인포그래픽',
@@ -45,6 +46,18 @@ export const PortfolioGallery: React.FC<PortfolioGalleryProps> = ({
     '영상 카드뉴스',
     '카드뉴스',
     '브랜딩 동화'
+  ];
+  const customCategories = Array.from(
+    new Set(
+      items
+        .map((i) => i.category?.trim())
+        .filter((c): c is string => Boolean(c && !defaultCategories.includes(c)))
+    )
+  );
+  const filterTabs: PortfolioCategory[] = [
+    '전체보기',
+    ...defaultCategories,
+    ...customCategories
   ];
 
   const handleOpenDetail = (item: PortfolioItem) => {
@@ -199,7 +212,7 @@ export const PortfolioGallery: React.FC<PortfolioGalleryProps> = ({
                   </p>
 
                   <div className="pt-2 flex items-center justify-between text-[11px] font-mono text-zinc-400 border-t border-zinc-100">
-                    <span>{item.videoFormat.split(' ')[0]}</span>
+                    <span>{String(item.videoFormat || '16:9').split(' ')[0]}</span>
                     <span className="group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5 text-zinc-900 font-bold">
                       자세히 보기 <ArrowUpRight className="w-3 h-3" />
                     </span>
@@ -298,17 +311,33 @@ export const PortfolioGallery: React.FC<PortfolioGalleryProps> = ({
               {/* Media Display Area: Player vs Still Scenes */}
               <div className="rounded-xl overflow-hidden bg-black border border-zinc-800 relative">
                 {mediaViewMode === 'video' && selectedItem.videoUrl ? (
-                  /* 1. Video Player Mode */
+                  /* 1. Video Player Mode (Direct Video, YouTube, Vimeo 통합 지원) */
                   <div className="relative aspect-[16/9] w-full overflow-hidden bg-black flex items-center justify-center">
-                    <video
-                      src={selectedItem.videoUrl}
-                      poster={selectedItem.videoThumbnail}
-                      controls
-                      autoPlay
-                      loop
-                      playsInline
-                      className="w-full h-full object-contain"
-                    />
+                    {(() => {
+                      const parsed = parseVideoUrl(selectedItem.videoUrl);
+                      if (parsed.type === 'youtube' || parsed.type === 'vimeo') {
+                        return (
+                          <iframe
+                            src={parsed.embedUrl}
+                            title={selectedItem.title}
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                            allowFullScreen
+                            className="w-full h-full border-0"
+                          />
+                        );
+                      }
+                      return (
+                        <video
+                          src={selectedItem.videoUrl}
+                          poster={selectedItem.videoThumbnail}
+                          controls
+                          autoPlay
+                          loop
+                          playsInline
+                          className="w-full h-full object-contain"
+                        />
+                      );
+                    })()}
                   </div>
                 ) : (
                   /* 2. Still Scenes Gallery Mode */

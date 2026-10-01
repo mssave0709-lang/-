@@ -99,14 +99,93 @@ export const updateInquiryStatus = (id: string, status: 'unread' | 'contacted'):
   return updated;
 };
 
-export const deleteInquiry = (id: string): ContactInquiry[] => {
+// 1차 삭제: 휴지통으로 이동
+export const trashInquiry = (id: string): ContactInquiry[] => {
+  const current = getInquiries();
+  const now = new Date();
+  const formattedDate = now.toLocaleString('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+
+  const updated = current.map(item => 
+    item.id === id 
+      ? { ...item, isDeleted: true, deletedAt: formattedDate } 
+      : item
+  );
+  try {
+    localStorage.setItem(INQUIRIES_STORAGE_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent('gfl_inquiry_updated'));
+  } catch (e) {
+    console.error('Failed to trash inquiry:', e);
+  }
+  return updated;
+};
+
+// 휴지통에서 복원
+export const restoreInquiry = (id: string): ContactInquiry[] => {
+  const current = getInquiries();
+  const updated = current.map(item => 
+    item.id === id 
+      ? { ...item, isDeleted: false, deletedAt: undefined } 
+      : item
+  );
+  try {
+    localStorage.setItem(INQUIRIES_STORAGE_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent('gfl_inquiry_updated'));
+  } catch (e) {
+    console.error('Failed to restore inquiry:', e);
+  }
+  return updated;
+};
+
+// 2차 영구 삭제
+export const permanentlyDeleteInquiry = (id: string): ContactInquiry[] => {
   const current = getInquiries();
   const updated = current.filter(item => item.id !== id);
   try {
     localStorage.setItem(INQUIRIES_STORAGE_KEY, JSON.stringify(updated));
     window.dispatchEvent(new CustomEvent('gfl_inquiry_updated'));
   } catch (e) {
-    console.error('Failed to delete inquiry:', e);
+    console.error('Failed to permanently delete inquiry:', e);
   }
   return updated;
+};
+
+// 휴지통 비우기 (삭제된 모든 문의 영구 삭제)
+export const emptyInquiryTrash = (): ContactInquiry[] => {
+  const current = getInquiries();
+  const updated = current.filter(item => !item.isDeleted);
+  try {
+    localStorage.setItem(INQUIRIES_STORAGE_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent('gfl_inquiry_updated'));
+  } catch (e) {
+    console.error('Failed to empty inquiry trash:', e);
+  }
+  return updated;
+};
+
+// 휴지통 전체 복원
+export const restoreAllInquiryTrash = (): ContactInquiry[] => {
+  const current = getInquiries();
+  const updated = current.map(item => 
+    item.isDeleted 
+      ? { ...item, isDeleted: false, deletedAt: undefined } 
+      : item
+  );
+  try {
+    localStorage.setItem(INQUIRIES_STORAGE_KEY, JSON.stringify(updated));
+    window.dispatchEvent(new CustomEvent('gfl_inquiry_updated'));
+  } catch (e) {
+    console.error('Failed to restore all inquiry trash:', e);
+  }
+  return updated;
+};
+
+// 하위 호환용 (기존 deleteInquiry 호출 시 휴지통으로 1차 이동)
+export const deleteInquiry = (id: string): ContactInquiry[] => {
+  return trashInquiry(id);
 };

@@ -145,6 +145,8 @@ export default function App() {
     setInquiryPrefill(`[${item.badge} ${item.title}] 스타일의 작업 영상 제작 견적 및 일정 문의드립니다.`);
   };
 
+  const activePortfolioItems = portfolioItems.filter(item => !item.isDeleted);
+
   return (
     <div className="min-h-screen bg-white text-zinc-900 flex flex-col font-sans selection:bg-zinc-200 selection:text-zinc-900 pb-16 md:pb-0">
       
@@ -171,7 +173,7 @@ export default function App() {
               <Hero 
                 onExploreWork={() => handleSwitchTab('work')} 
                 onOpenContact={() => handleSwitchTab('contact')}
-                featuredItem={portfolioItems[0]}
+                featuredItem={activePortfolioItems[0] || portfolioItems[0]}
                 onSelectWorkItem={() => handleSwitchTab('work')}
               />
             </motion.div>
@@ -203,7 +205,7 @@ export default function App() {
               className="w-full"
             >
               <PortfolioGallery 
-                items={portfolioItems}
+                items={activePortfolioItems}
                 onSelectItem={handleSelectWorkItem}
                 onOpenContact={() => handleSwitchTab('contact')}
                 isAdminLoggedIn={isAdminLoggedIn}

@@ -1,23 +1,7 @@
 export type NavigationTab = 'home' | 'service' | 'work' | 'contact';
 
-export type PortfolioCategory = 
-  | '전체보기' 
-  | '광고' 
-  | '숏폼' 
-  | '인포그래픽' 
-  | '디지털 메뉴보드' 
-  | '영상 카드뉴스' 
-  | '카드뉴스'
-  | '브랜딩 동화';
-
-export type PortfolioItemCategory = 
-  | '광고' 
-  | '숏폼' 
-  | '인포그래픽' 
-  | '디지털 메뉴보드' 
-  | '영상 카드뉴스' 
-  | '카드뉴스'
-  | '브랜딩 동화';
+export type PortfolioCategory = string;
+export type PortfolioItemCategory = string;
 
 export interface PortfolioItem {
   id: string;
@@ -39,6 +23,8 @@ export interface PortfolioItem {
   keyMessage?: string; // 핵심 전달 메시지 / 슬로건
   productionNotes?: string; // 제작 비하인드 및 연출 노트 (조명, 색감, 사운드 등)
   targetAudience?: string; // 송출 공간 추천 및 타겟 고객 가이드
+  isDeleted?: boolean; // 휴지통 보관 여부 (1차 삭제)
+  deletedAt?: string; // 휴지통 이동 일시
 }
 
 export interface SimpleInquiryForm {
@@ -54,4 +40,6 @@ export interface ContactInquiry {
   message: string;
   createdAt: string;
   status: 'unread' | 'contacted';
+  isDeleted?: boolean; // 휴지통 보관 여부 (1차 삭제)
+  deletedAt?: string; // 휴지통 이동 일시
 }
