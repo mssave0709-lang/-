@@ -1,4 +1,4 @@
-export const DEFAULT_PORTFOLIO_CATEGORIES: string[] = [
+export const INITIAL_CATEGORIES: string[] = [
   '광고',
   '숏폼',
   '인포그래픽',
@@ -8,35 +8,43 @@ export const DEFAULT_PORTFOLIO_CATEGORIES: string[] = [
   '브랜딩 동화'
 ];
 
-export const CATEGORIES_STORAGE_KEY = 'gfl_custom_categories';
+export const DEFAULT_PORTFOLIO_CATEGORIES = INITIAL_CATEGORIES;
 
-export function getStoredCustomCategories(): string[] {
+export const CATEGORIES_STORAGE_KEY = 'gfl_categories_dynamic_v1';
+
+export function getStoredCategories(): string[] {
   try {
     const raw = localStorage.getItem(CATEGORIES_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) {
-      return parsed
-        .map((s) => String(s).trim())
-        .filter((s) => s.length > 0 && !DEFAULT_PORTFOLIO_CATEGORIES.includes(s));
+    if (raw !== null) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((s) => String(s).trim())
+          .filter((s) => s.length > 0);
+      }
     }
   } catch (e) {
-    console.error('Failed to load custom categories from localStorage:', e);
+    console.error('Failed to load categories from localStorage:', e);
   }
-  return [];
+  // 기본 초기 카테고리로 시작하되, 이후 사용자가 자유롭게 삭제/추가 가능
+  return [...INITIAL_CATEGORIES];
 }
 
-export function saveStoredCustomCategories(categories: string[]): void {
+export function saveStoredCategories(categories: string[]): void {
   try {
     const cleaned = Array.from(
       new Set(
         categories
           .map((c) => c.trim())
-          .filter((c) => c.length > 0 && !DEFAULT_PORTFOLIO_CATEGORIES.includes(c))
+          .filter((c) => c.length > 0)
       )
     );
     localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(cleaned));
   } catch (e) {
-    console.error('Failed to save custom categories to localStorage:', e);
+    console.error('Failed to save categories to localStorage:', e);
   }
 }
+
+// 기존 참조 호환용 alias
+export const getStoredCustomCategories = getStoredCategories;
+export const saveStoredCustomCategories = saveStoredCategories;

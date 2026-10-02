@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { PortfolioItem } from '../types';
+import { parseVideoUrl } from '../utils/videoHelper';
 
 interface HeroProps {
   onExploreWork: () => void;
@@ -33,41 +34,80 @@ export const Hero: React.FC<HeroProps> = ({
 
   // Reliable sample video for initial preview if no custom user video uploaded
   const defaultVideoUrl = "/videos/hero-promo.mp4";
-  const videoSrc = featuredItem?.videoUrl || defaultVideoUrl;
+  const videoSrc = (featuredItem?.videoUrl && featuredItem.videoUrl.trim()) || defaultVideoUrl;
+  const parsedVideo = parseVideoUrl(videoSrc);
+  const isEmbed = parsedVideo.type === 'youtube' || parsedVideo.type === 'vimeo';
 
   // Ensure autoplay with muted status reliably mounts in all browsers
   useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.muted = isMuted;
-      videoRef.current.play().then(() => {
-        setIsPlaying(true);
-      }).catch(() => {
-        // In case browser policy requires user gesture, display play trigger
-        setIsPlaying(false);
-      });
+    const video = videoRef.current;
+    if (!video || isEmbed) return;
+
+    video.defaultMuted = true;
+    video.muted = isMuted;
+
+    const playVideo = () => {
+      const promise = video.play();
+      if (promise !== undefined) {
+        promise
+          .then(() => {
+            setIsPlaying(true);
+          })
+          .catch(() => {
+            // Browser autoplay policy prevented playback without prior user interaction
+            setIsPlaying(false);
+          });
+      }
+    };
+
+    if (video.readyState >= 2) {
+      playVideo();
+    } else {
+      video.addEventListener('loadeddata', playVideo, { once: true });
+      video.addEventListener('canplay', playVideo, { once: true });
     }
-  }, [videoSrc]);
+
+    return () => {
+      video.removeEventListener('loadeddata', playVideo);
+      video.removeEventListener('canplay', playVideo);
+    };
+  }, [videoSrc, isEmbed]);
 
   const toggleMute = () => {
-    if (videoRef.current) {
-      const nextMuted = !videoRef.current.muted;
-      videoRef.current.muted = nextMuted;
+    const video = videoRef.current;
+    if (video) {
+      const nextMuted = !video.muted;
+      video.muted = nextMuted;
       setIsMuted(nextMuted);
     }
   };
 
   const togglePlay = () => {
-    if (videoRef.current) {
-      if (videoRef.current.paused) {
-        videoRef.current.play().then(() => {
-          setIsPlaying(true);
-        }).catch((err) => {
-          console.warn("Playback error:", err);
-        });
-      } else {
-        videoRef.current.pause();
-        setIsPlaying(false);
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (video.paused) {
+      if (video.readyState === 0) {
+        video.load();
       }
+      const promise = video.play();
+      if (promise !== undefined) {
+        promise
+          .then(() => {
+            setIsPlaying(true);
+          })
+          .catch(() => {
+            // If unmuted playback is blocked, fallback to muted playback
+            video.muted = true;
+            setIsMuted(true);
+            video.play()
+              .then(() => setIsPlaying(true))
+              .catch((err) => console.error("Playback error:", err));
+          });
+      }
+    } else {
+      video.pause();
+      setIsPlaying(false);
     }
   };
 
@@ -345,64 +385,86 @@ export const Hero: React.FC<HeroProps> = ({
             {/* Outer Frame with soft shadow & rounded corners for high quality screen aesthetic */}
             <div className="relative rounded-2xl sm:rounded-3xl p-2 sm:p-3 bg-zinc-100/90 border border-zinc-200/90 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.12)] hover:shadow-[0_30px_70px_-15px_rgba(0,0,0,0.16)] transition-all duration-300">
 
-              {/* HTML5 Video Canvas */}
+              {/* HTML5 Video / Embed Canvas */}
               <div 
-                className="relative aspect-[16/9] w-full overflow-hidden rounded-xl sm:rounded-2xl bg-zinc-950 group select-none cursor-pointer"
-                onClick={togglePlay}
+                className="relative aspect-[16/9] w-full overflow-hidden rounded-xl sm:rounded-2xl bg-zinc-950 group select-none"
               >
-                <video
-                  ref={videoRef}
-                  src={videoSrc}
-                  autoPlay
-                  muted={isMuted}
-                  loop
-                  playsInline
-                  preload="auto"
-                  poster={featuredItem?.videoThumbnail}
-                  onPlay={() => setIsPlaying(true)}
-                  onPause={() => setIsPlaying(false)}
-                  className="w-full h-full object-cover select-none pointer-events-none"
-                >
-                  <source src={videoSrc} type="video/mp4" />
-                  해당 브라우저는 비디오 재생을 지원하지 않습니다.
-                </video>
+                {isEmbed ? (
+                  <iframe
+                    src={parsedVideo.embedUrl}
+                    title={featuredItem?.title || "메인 대표 영상"}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                    className="w-full h-full border-0"
+                  />
+                ) : (
+                  <>
+                    <video
+                      ref={videoRef}
+                      key={videoSrc}
+                      src={videoSrc}
+                      autoPlay
+                      muted={isMuted}
+                      loop
+                      playsInline
+                      preload="auto"
+                      poster={featuredItem?.videoThumbnail}
+                      onPlay={() => setIsPlaying(true)}
+                      onPause={() => setIsPlaying(false)}
+                      onClick={togglePlay}
+                      className="w-full h-full object-cover select-none cursor-pointer"
+                    />
 
-                {/* Center Play Button Overlay when paused */}
-                {!isPlaying && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px] transition-all z-15 animate-in fade-in duration-200">
-                    <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white/95 hover:bg-white text-zinc-950 flex items-center justify-center shadow-2xl hover:scale-110 active:scale-95 transition-all">
-                      <Play className="w-7 h-7 sm:w-8 sm:h-8 fill-current ml-1 text-zinc-900" />
+                    {/* Center Play Button Overlay when paused */}
+                    {!isPlaying && (
+                      <div 
+                        onClick={togglePlay}
+                        className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px] transition-all z-20 cursor-pointer animate-in fade-in duration-200"
+                      >
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            togglePlay();
+                          }}
+                          className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white/95 hover:bg-white text-zinc-950 flex items-center justify-center shadow-2xl hover:scale-110 active:scale-95 transition-all cursor-pointer"
+                          title="영상 재생"
+                          aria-label="영상 재생"
+                        >
+                          <Play className="w-7 h-7 sm:w-8 sm:h-8 fill-current ml-1 text-zinc-900" />
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Subtle Top Overlay Controls */}
+                    <div className="absolute top-3 right-3 flex items-center gap-2 z-20">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleMute();
+                        }}
+                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-zinc-950/70 hover:bg-zinc-950 text-white flex items-center justify-center backdrop-blur-md border border-white/10 transition-colors cursor-pointer shadow-sm"
+                        title={isMuted ? "음소거 해제" : "음소거"}
+                        aria-label={isMuted ? "음소거 해제" : "음소거"}
+                      >
+                        {isMuted ? <VolumeX className="w-4 h-4 text-zinc-300" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          togglePlay();
+                        }}
+                        className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-zinc-950/70 hover:bg-zinc-950 text-white flex items-center justify-center backdrop-blur-md border border-white/10 transition-colors cursor-pointer shadow-sm"
+                        title={isPlaying ? "일시정지" : "재생"}
+                        aria-label={isPlaying ? "일시정지" : "재생"}
+                      >
+                        {isPlaying ? <Pause className="w-4 h-4 text-zinc-300" /> : <Play className="w-4 h-4 text-zinc-300 fill-current ml-0.5" />}
+                      </button>
                     </div>
-                  </div>
+                  </>
                 )}
-
-                {/* Subtle Top Overlay Controls */}
-                <div className="absolute top-3 right-3 flex items-center gap-2 z-20">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleMute();
-                    }}
-                    className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-zinc-950/70 hover:bg-zinc-950 text-white flex items-center justify-center backdrop-blur-md border border-white/10 transition-colors cursor-pointer shadow-sm"
-                    title={isMuted ? "음소거 해제" : "음소거"}
-                    aria-label={isMuted ? "음소거 해제" : "음소거"}
-                  >
-                    {isMuted ? <VolumeX className="w-4 h-4 text-zinc-300" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      togglePlay();
-                    }}
-                    className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-zinc-950/70 hover:bg-zinc-950 text-white flex items-center justify-center backdrop-blur-md border border-white/10 transition-colors cursor-pointer shadow-sm"
-                    title={isPlaying ? "일시정지" : "재생"}
-                    aria-label={isPlaying ? "일시정지" : "재생"}
-                  >
-                    {isPlaying ? <Pause className="w-4 h-4 text-zinc-300" /> : <Play className="w-4 h-4 text-zinc-300 fill-current ml-0.5" />}
-                  </button>
-                </div>
 
                 {/* Bottom Metadata Overlay */}
                 <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6 bg-gradient-to-t from-zinc-950/90 via-zinc-950/50 to-transparent flex items-end justify-between pointer-events-none z-10">

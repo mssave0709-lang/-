@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { PortfolioItem, PortfolioCategory } from '../types';
 import { DEFAULT_PORTFOLIO_CATEGORIES, getStoredCustomCategories } from '../utils/categoryStorage';
 import { 
@@ -37,14 +37,13 @@ export const PortfolioGallery: React.FC<PortfolioGalleryProps> = ({
   const [activeCategory, setActiveCategory] = useState<PortfolioCategory>('전체보기');
   const [mediaViewMode, setMediaViewMode] = useState<'video' | 'stills'>('video');
 
-  // Dynamic filter tabs: 기본 카테고리 + 영상 관리에서 새로 생성된 카테고리 + 등록된 작업 영상의 카테고리 자동 연동
+  // Dynamic filter tabs: '전체보기' + 관리 창구에서 활성화된 카테고리만 동기화 (고정 기본값 없음, 자유롭게 생성/삭제)
   const filterTabs: PortfolioCategory[] = useMemo(() => {
-    const list: string[] = ['전체보기', ...DEFAULT_PORTFOLIO_CATEGORIES];
-    const categorySet = new Set<string>(DEFAULT_PORTFOLIO_CATEGORIES);
+    const list: string[] = ['전체보기'];
+    const categorySet = new Set<string>();
 
-    // 1. 영상 관리에서 추가된 커스텀 카테고리
-    const customList = customCategories || getStoredCustomCategories();
-    customList.forEach((c) => {
+    const managedCategories = customCategories || getStoredCustomCategories();
+    managedCategories.forEach((c) => {
       const trimmed = c.trim();
       if (trimmed && !categorySet.has(trimmed)) {
         categorySet.add(trimmed);
@@ -52,17 +51,71 @@ export const PortfolioGallery: React.FC<PortfolioGalleryProps> = ({
       }
     });
 
-    // 2. 현재 등록된 작업물들의 카테고리 (새 영상 등록 시 입력된 새 카테고리 포함)
-    items.forEach((item) => {
-      const trimmed = item.category?.trim();
-      if (trimmed && !categorySet.has(trimmed)) {
-        categorySet.add(trimmed);
-        list.push(trimmed);
-      }
-    });
-
     return list;
-  }, [items, customCategories]);
+  }, [customCategories]);
+
+  // 활성 탭이 삭제되었거나 목록에 없는 경우 '전체보기'로 자동 복귀
+  useEffect(() => {
+    if (activeCategory !== '전체보기' && !filterTabs.includes(activeCategory)) {
+      setActiveCategory('전체보기');
+    }
+  }, [filterTabs, activeCategory]);
+
+  // 카테고리 탭 가로 스크롤 관리
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState<boolean>(false);
+  const [canScrollRight, setCanScrollRight] = useState<boolean>(false);
+
+  const checkScroll = useCallback(() => {
+    const el = scrollContainerRef.current;
+    if (el) {
+      const { scrollLeft, scrollWidth, clientWidth } = el;
+      setCanScrollLeft(scrollLeft > 6);
+      setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 6);
+    }
+  }, []);
+
+  useEffect(() => {
+    checkScroll();
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', checkScroll, { passive: true });
+    window.addEventListener('resize', checkScroll);
+    return () => {
+      el.removeEventListener('scroll', checkScroll);
+      window.removeEventListener('resize', checkScroll);
+    };
+  }, [checkScroll, filterTabs]);
+
+  const handleScrollBy = (offset: number) => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollBy({ left: offset, behavior: 'smooth' });
+    }
+  };
+
+  const handleWheelScroll = (e: React.WheelEvent<HTMLDivElement>) => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      const { scrollLeft, scrollWidth, clientWidth } = el;
+      const canScroll = (e.deltaY > 0 && scrollLeft < scrollWidth - clientWidth) || (e.deltaY < 0 && scrollLeft > 0);
+      if (canScroll) {
+        e.preventDefault();
+        el.scrollLeft += e.deltaY;
+      }
+    }
+  };
+
+  const handleSelectCategory = (category: PortfolioCategory, e?: React.MouseEvent<HTMLButtonElement>) => {
+    setActiveCategory(category);
+    if (e?.currentTarget) {
+      e.currentTarget.scrollIntoView({
+        behavior: 'smooth',
+        inline: 'center',
+        block: 'nearest'
+      });
+    }
+  };
 
   const handleOpenDetail = (item: PortfolioItem) => {
     setSelectedItem(item);
@@ -105,33 +158,72 @@ export const PortfolioGallery: React.FC<PortfolioGalleryProps> = ({
           </div>
         </div>
 
-        {/* 탭 메뉴 카테고리 구성: [전체보기] | [광고] | [숏폼] | [인포그래픽] | [디지털 메뉴보드] | [영상 카드뉴스] | [카드뉴스] */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-4 mb-8 sm:mb-10 scrollbar-none border-b border-zinc-100">
-          {filterTabs.map((category) => {
-            const isActive = activeCategory === category;
-            const count = category === '전체보기' 
-              ? items.length 
-              : items.filter(i => i.category === category).length;
-
-            return (
+        {/* 탭 메뉴 카테고리 구성 (가로 스크롤 및 좌우 스크롤 내비게이션 지원) */}
+        <div className="relative mb-8 sm:mb-10 group/category-scroll">
+          {/* Left Arrow Button */}
+          {canScrollLeft && (
+            <div className="absolute left-0 top-0 bottom-3.5 z-10 flex items-center pr-3">
+              <div className="absolute inset-0 bg-gradient-to-r from-white via-white/95 to-transparent pointer-events-none w-16" />
               <button
-                key={category}
-                onClick={() => setActiveCategory(category)}
-                className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 ${
-                  isActive
-                    ? 'bg-zinc-950 text-white shadow-sm ring-1 ring-zinc-950'
-                    : 'bg-zinc-100 text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200 border border-transparent'
-                }`}
+                type="button"
+                onClick={() => handleScrollBy(-240)}
+                className="relative z-10 w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white text-zinc-700 hover:text-zinc-950 border border-zinc-200/90 shadow-md hover:shadow-lg flex items-center justify-center transition-all cursor-pointer hover:scale-105 active:scale-95"
+                title="이전 카테고리 스크롤"
+                aria-label="이전 카테고리 스크롤"
               >
-                <span>{category}</span>
-                <span className={`text-[11px] font-mono px-1.5 py-0.2 rounded-full ${
-                  isActive ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-200/80 text-zinc-500'
-                }`}>
-                  {count}
-                </span>
+                <ChevronLeft className="w-4 h-4 sm:w-5 sm:h-5 text-zinc-700" />
               </button>
-            );
-          })}
+            </div>
+          )}
+
+          {/* Right Arrow Button */}
+          {canScrollRight && (
+            <div className="absolute right-0 top-0 bottom-3.5 z-10 flex items-center pl-3 justify-end">
+              <div className="absolute inset-0 bg-gradient-to-l from-white via-white/95 to-transparent pointer-events-none w-16" />
+              <button
+                type="button"
+                onClick={() => handleScrollBy(240)}
+                className="relative z-10 w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-white text-zinc-700 hover:text-zinc-950 border border-zinc-200/90 shadow-md hover:shadow-lg flex items-center justify-center transition-all cursor-pointer hover:scale-105 active:scale-95"
+                title="다음 카테고리 스크롤"
+                aria-label="다음 카테고리 스크롤"
+              >
+                <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-zinc-700" />
+              </button>
+            </div>
+          )}
+
+          {/* Horizontal Scroll Track */}
+          <div 
+            ref={scrollContainerRef}
+            onWheel={handleWheelScroll}
+            className="flex items-center gap-2 overflow-x-auto pb-3.5 border-b border-zinc-100 scroll-smooth select-none scrollbar-thin scrollbar-thumb-zinc-200 hover:scrollbar-thumb-zinc-300"
+          >
+            {filterTabs.map((category) => {
+              const isActive = activeCategory === category;
+              const count = category === '전체보기' 
+                ? items.length 
+                : items.filter(i => i.category === category).length;
+
+              return (
+                <button
+                  key={category}
+                  onClick={(e) => handleSelectCategory(category, e)}
+                  className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap transition-all flex items-center gap-2 shrink-0 cursor-pointer ${
+                    isActive
+                      ? 'bg-zinc-950 text-white shadow-sm ring-1 ring-zinc-950 scale-[1.02]'
+                      : 'bg-zinc-100 text-zinc-600 hover:text-zinc-950 hover:bg-zinc-200 border border-transparent'
+                  }`}
+                >
+                  <span>{category}</span>
+                  <span className={`text-[11px] font-mono px-1.5 py-0.2 rounded-full ${
+                    isActive ? 'bg-zinc-800 text-zinc-300' : 'bg-zinc-200/80 text-zinc-500'
+                  }`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Works Grid */}

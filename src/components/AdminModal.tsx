@@ -211,13 +211,13 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState<boolean>(false);
   const [newCategoryInput, setNewCategoryInput] = useState<string>('');
 
-  // Combined categories list (System default + custom created + current items)
+  // Combined categories list: 관리자가 자유롭게 생성/삭제/관리하는 카테고리 전체 목록
   const allCategories = React.useMemo(() => {
-    const list: string[] = [...DEFAULT_PORTFOLIO_CATEGORIES];
-    const categorySet = new Set<string>(DEFAULT_PORTFOLIO_CATEGORIES);
+    const list: string[] = [];
+    const categorySet = new Set<string>();
 
-    const customList = customCategories || getStoredCustomCategories();
-    customList.forEach((c) => {
+    const managedList = customCategories || getStoredCustomCategories();
+    managedList.forEach((c) => {
       const trimmed = c.trim();
       if (trimmed && !categorySet.has(trimmed)) {
         categorySet.add(trimmed);
@@ -225,6 +225,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
       }
     });
 
+    // 기존 등록된 영상들 중 아직 남아있는 카테고리가 있다면 관리자가 인지하고 삭제/재분류할 수 있도록 목록에 노출
     items.forEach((item) => {
       const trimmed = item.category?.trim();
       if (trimmed && !categorySet.has(trimmed)) {
@@ -679,9 +680,9 @@ export const AdminModal: React.FC<AdminModalProps> = ({
         showToast(`'${updatedItem.title}' 작업영상이 성공적으로 수정되었습니다.`);
       }
 
-      // 새 카테고리인 경우 커스텀 카테고리 목록에 자동 추가 (홈페이지 작업물 탭에 즉시 생성 연동)
+      // 새 카테고리인 경우 카테고리 목록에 자동 추가 (홈페이지 작업물 탭에 즉시 생성 연동)
       const trimmedCategory = formCategory.trim();
-      if (trimmedCategory && !DEFAULT_PORTFOLIO_CATEGORIES.includes(trimmedCategory)) {
+      if (trimmedCategory) {
         const currentCustom = customCategories || getStoredCustomCategories();
         if (!currentCustom.includes(trimmedCategory)) {
           const updatedCustom = [...currentCustom, trimmedCategory];
@@ -726,29 +727,59 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     showToast(`'${trimmed}' 카테고리가 생성되었습니다. 홈페이지 '작업물' 탭에 즉시 반영됩니다.`);
   };
 
-  // 커스텀 카테고리 삭제 핸들러
+  // 커스텀 / 잘못 생성된 카테고리 완전 삭제 핸들러 (연결된 영상도 안전하게 재분류하여 잔여 카테고리 영구 제거)
   const handleRemoveCategory = (catName: string) => {
-    const activeCount = items.filter(i => !i.isDeleted && i.category === catName).length;
+    const affectedItems = items.filter(i => i.category === catName);
+    const affectedCount = affectedItems.length;
+
     setConfirmDialog({
       isOpen: true,
       type: 'delete_category',
       title: '카테고리 삭제',
       itemTitle: `'${catName}' 카테고리 삭제`,
-      itemSubtitle: activeCount > 0 ? `현재 이 카테고리에 속한 작업 영상 ${activeCount}개가 있습니다.` : '현재 연결된 영상이 없습니다.',
-      warningText: activeCount > 0 
-        ? `이 카테고리를 삭제하시겠습니까? 해당 영상들의 정보는 유지되나, 홈페이지 '작업물' 탭 필터 목록에서 제외됩니다.`
-        : `이 카테고리를 삭제하시겠습니까? 홈페이지 '작업물' 탭 필터 목록에서 즉시 제거됩니다.`,
-      confirmLabel: '카테고리 삭제',
+      itemSubtitle: affectedCount > 0 
+        ? `현재 이 카테고리로 지정된 작업 영상이 총 ${affectedCount}개 있습니다.` 
+        : '현재 연결된 영상이 없습니다.',
+      warningText: affectedCount > 0 
+        ? `'${catName}' 카테고리를 완전히 삭제하시겠습니까? 연결된 영상 ${affectedCount}개는 남은 카테고리로 안전하게 자동 재지정되며, 홈페이지 '작업물' 탭 및 영상 관리 필터에서 완전히 삭제됩니다.`
+        : `'${catName}' 카테고리를 완전히 삭제하시겠습니까? 홈페이지 '작업물' 탭 필터 목록에서 즉시 완전히 제거됩니다.`,
+      confirmLabel: '카테고리 완전 삭제',
       confirmColor: 'red',
       onConfirm: () => {
+        // 1. 카테고리 목록에서 제거
         const currentCustom = customCategories || getStoredCustomCategories();
-        const updated = currentCustom.filter(c => c !== catName);
+        const updatedCustom = currentCustom.filter(c => c !== catName);
         if (onSaveCustomCategories) {
-          onSaveCustomCategories(updated);
+          onSaveCustomCategories(updatedCustom);
         } else {
-          saveStoredCustomCategories(updated);
+          saveStoredCustomCategories(updatedCustom);
         }
-        showToast(`'${catName}' 카테고리가 삭제되었습니다.`);
+
+        // 2. 해당 카테고리가 부여된 기존 영상들을 다른 남은 카테고리(또는 '기타')로 일괄 안전 재지정
+        if (affectedCount > 0) {
+          const fallbackCategory = updatedCustom[0] || '기타';
+          const updatedItems = items.map(item => {
+            if (item.category === catName) {
+              const updatedBadge = item.badge === `[${catName}]` ? `[${fallbackCategory}]` : item.badge;
+              const updatedTags = (item.tags || []).map(t => t === catName ? fallbackCategory : t);
+              return {
+                ...item,
+                category: fallbackCategory,
+                badge: updatedBadge,
+                tags: updatedTags
+              };
+            }
+            return item;
+          });
+          onSaveItems(updatedItems);
+        }
+
+        // 3. 현재 관리자 필터가 삭제된 카테고리였을 경우 '전체'로 복귀
+        if (listFilterCategory === catName) {
+          setListFilterCategory('전체');
+        }
+
+        showToast(`'${catName}' 카테고리가 완전히 삭제되었습니다.`);
         setConfirmDialog(null);
       }
     });
@@ -2568,11 +2599,9 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                       >
                         <Tag className="w-3.5 h-3.5 text-[#EA580C]" />
                         <span>카테고리 관리</span>
-                        {allCategories.length > DEFAULT_PORTFOLIO_CATEGORIES.length && (
-                          <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-orange-100 text-[#EA580C] font-bold">
-                            +{allCategories.length - DEFAULT_PORTFOLIO_CATEGORIES.length}
-                          </span>
-                        )}
+                        <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-orange-100 text-[#EA580C] font-bold">
+                          {allCategories.length}개
+                        </span>
                       </button>
 
                       <button
@@ -2605,10 +2634,10 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         <div>
                           <div className="text-sm font-extrabold text-neutral-900 flex items-center gap-1.5">
                             <Tag className="w-4 h-4 text-[#EA580C]" />
-                            <span>작업물 카테고리 실시간 생성 및 연동 관리</span>
+                            <span>작업물 카테고리 자유 생성 & 완전 삭제 관리</span>
                           </div>
                           <p className="text-xs text-neutral-500 mt-0.5">
-                            여기서 새 카테고리를 등록하거나 영상 추가 시 입력한 새로운 분류는, 웹사이트 <strong>'작업물' 탭 상단 카테고리 필터에 즉시 자동 생성</strong>되어 노출됩니다.
+                            고정된 기본 카테고리 없이 모든 카테고리를 자유롭게 생성하고 삭제할 수 있습니다. 변경사항은 홈페이지 <strong>'작업물' 탭 상단 필터에 즉시 자동 연동</strong>됩니다.
                           </p>
                         </div>
                         <button
@@ -2655,15 +2684,20 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         </div>
                         <div className="flex flex-wrap gap-1.5">
                           {[
+                            '광고',
+                            '숏폼',
+                            '인포그래픽',
+                            '디지털 메뉴보드',
+                            '영상 카드뉴스',
+                            '카드뉴스',
+                            '브랜딩 동화',
                             '3D 모션 그래픽',
                             '드론/항공 영상',
                             '기업/기관 홍보',
                             '인터뷰/다큐멘터리',
                             '유튜브/웹예능',
                             '브랜드 필름',
-                            '미디어아트/전시',
-                            '교육/튜토리얼',
-                            '이벤트/프로모션'
+                            '미디어아트/전시'
                           ]
                             .filter(preset => !allCategories.includes(preset))
                             .map((preset) => (
@@ -2680,47 +2714,49 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         </div>
                       </div>
 
-                      {/* Current Categories List Badges */}
-                      <div className="space-y-2 pt-2 border-t border-neutral-100">
-                        <div className="text-xs font-bold text-neutral-700 flex items-center justify-between">
-                          <span>현재 활성화된 카테고리 목록 (총 {allCategories.length}개)</span>
-                          <span className="text-[11px] text-neutral-400 font-normal">
-                            * 홈페이지 '작업물' 탭 상단에 순서대로 노출됩니다.
+                      {/* Current Categories List Badges (전체 자유 삭제 및 관리) */}
+                      <div className="space-y-3 pt-3 border-t border-neutral-100">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs font-bold text-neutral-800">
+                          <span className="flex items-center gap-1.5">
+                            <Tag className="w-3.5 h-3.5 text-[#EA580C]" />
+                            <span>현재 등록된 카테고리 목록 (총 {allCategories.length}개)</span>
+                          </span>
+                          <span className="text-[11px] text-neutral-500 font-normal">
+                            * 고정된 카테고리 없이 모든 카테고리를 <strong className="text-red-600 font-bold">[삭제]</strong>할 수 있습니다.
                           </span>
                         </div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {allCategories.map((cat) => {
-                            const isDefault = DEFAULT_PORTFOLIO_CATEGORIES.includes(cat);
-                            const count = activePortfolioItems.filter(i => i.category === cat).length;
-                            return (
-                              <div
-                                key={cat}
-                                className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-2 ${
-                                  isDefault
-                                    ? 'bg-neutral-100 border-neutral-200 text-neutral-800'
-                                    : 'bg-orange-50 border-orange-200 text-[#EA580C]'
-                                }`}
-                              >
-                                <span>{cat}</span>
-                                <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
-                                  isDefault ? 'bg-neutral-200 text-neutral-600' : 'bg-orange-100 text-[#EA580C]'
-                                }`}>
-                                  {count}개
-                                </span>
-                                {!isDefault && (
+
+                        {allCategories.length === 0 ? (
+                          <div className="py-6 text-center text-xs text-neutral-400 bg-neutral-50 rounded-lg border border-neutral-200">
+                            등록된 카테고리가 없습니다. 위 입력창이나 추천 버튼을 눌러 새 카테고리를 생성해보세요.
+                          </div>
+                        ) : (
+                          <div className="flex flex-wrap gap-2">
+                            {allCategories.map((cat) => {
+                              const count = activePortfolioItems.filter(i => i.category === cat).length;
+                              return (
+                                <div
+                                  key={cat}
+                                  className="px-3 py-1.5 rounded-lg border border-neutral-300 bg-neutral-50 hover:bg-white text-neutral-900 text-xs font-bold flex items-center gap-2 shadow-2xs transition-colors"
+                                >
+                                  <span className="text-neutral-900 font-extrabold">{cat}</span>
+                                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-neutral-200 text-neutral-700">
+                                    {count}개 영상
+                                  </span>
                                   <button
                                     type="button"
                                     onClick={() => handleRemoveCategory(cat)}
-                                    className="p-0.5 text-neutral-400 hover:text-red-600 rounded hover:bg-red-50 transition-colors ml-0.5 cursor-pointer"
-                                    title="카테고리 삭제"
+                                    className="px-2 py-0.5 rounded bg-white hover:bg-red-50 text-neutral-500 hover:text-red-600 border border-neutral-200 hover:border-red-200 transition-colors flex items-center gap-1 text-[11px] font-bold cursor-pointer ml-1 shadow-2xs"
+                                    title={`'${cat}' 카테고리 완전히 삭제`}
                                   >
-                                    <X className="w-3 h-3" />
+                                    <Trash2 className="w-3 h-3 text-red-500" />
+                                    <span>삭제</span>
                                   </button>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}

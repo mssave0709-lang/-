@@ -66,7 +66,7 @@ export const ContactForm: React.FC<ContactFormProps> = ({ prefilledMessage }) =>
             프로젝트 의뢰 및 협업 문의
           </h2>
           <p className="text-sm sm:text-base text-zinc-500 max-w-lg mx-auto leading-relaxed">
-            새로운 영상 제작, 브랜드 모션, 디스플레이 콘텐츠 등 편하게 문의를 남겨주시면 빠르게 회신드리겠습니다.
+            새로운 영상 제작, 브랜드 모션, 디스플레이 콘텐츠 등 편하게 문의를<br className="hidden sm:inline" /> 남겨주시면 빠르게 회신드리겠습니다.
           </p>
         </div>
 
