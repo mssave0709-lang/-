@@ -33,6 +33,7 @@ import {
   MessageSquare,
   PhoneCall,
   Copy,
+  Download,
   Clock,
   User,
   Inbox,
@@ -236,6 +237,44 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
     return list;
   }, [items, customCategories]);
+
+  // Data Export / Code Sync Modal State
+  const [isExportDialogOpen, setIsExportDialogOpen] = useState<boolean>(false);
+  const [copiedDataSuccess, setCopiedDataSuccess] = useState<boolean>(false);
+
+  const activeVideosJson = React.useMemo(() => {
+    const activeItems = items.filter(i => !i.isDeleted);
+    return JSON.stringify(activeItems, null, 2);
+  }, [items]);
+
+  const handleCopyExportData = () => {
+    try {
+      navigator.clipboard.writeText(activeVideosJson);
+      setCopiedDataSuccess(true);
+      showToast('전체 영상 데이터(JSON)가 복사되었습니다! AI Studio 대화창에 붙여넣어 주세요.');
+      setTimeout(() => setCopiedDataSuccess(false), 3000);
+    } catch {
+      showToast('텍스트 창을 전체 선택(Ctrl+A) 후 복사(Ctrl+C)해주세요.');
+    }
+  };
+
+  const handleDownloadExportData = () => {
+    try {
+      const blob = new Blob([activeVideosJson], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `gangwon_portfolio_data_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('데이터 백업 파일이 다운로드되었습니다.');
+    } catch (e) {
+      console.error(e);
+      showToast('다운로드 처리 중 오류가 발생했습니다.');
+    }
+  };
 
   // Authentication state
   const [passwordInput, setPasswordInput] = useState<string>('');
@@ -2606,6 +2645,16 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
                       <button
                         type="button"
+                        onClick={() => setIsExportDialogOpen(true)}
+                        className="flex-1 sm:flex-initial justify-center flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                        title="등록된 영상 데이터를 다른 모든 방문자가 볼 수 있도록 영구 코드 반영용 데이터 복사"
+                      >
+                        <Copy className="w-3.5 h-3.5 text-blue-600" />
+                        <span>데이터 내보내기/백업</span>
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => {
                           setAdminTab('trash');
                           setTrashSubTab('portfolio');
@@ -2980,6 +3029,111 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>{confirmDialog.confirmLabel}</span>
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Export Data / Code Sync Dialog */}
+        {isExportDialogOpen && (
+          <div 
+            className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsExportDialogOpen(false);
+            }}
+          >
+            <div 
+              className="bg-white rounded-2xl max-w-xl w-full p-5 sm:p-6 shadow-2xl border border-neutral-200 space-y-4 animate-in zoom-in-95 duration-150"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center font-bold shrink-0">
+                    <Copy className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-neutral-900">
+                      등록된 작업 영상 데이터 내보내기 / 동기화 백업
+                    </h3>
+                    <p className="text-xs text-neutral-500">
+                      현재 등록된 활성 영상 총 {items.filter(i => !i.isDeleted).length}개의 데이터입니다.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsExportDialogOpen(false)}
+                  className="p-1.5 text-neutral-400 hover:text-neutral-700 rounded-lg hover:bg-neutral-100 cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3.5 space-y-1.5 text-xs text-blue-900 leading-relaxed">
+                <div className="font-extrabold flex items-center gap-1.5 text-blue-950">
+                  <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span>다른 사람에게도 영상이 보이게 하는 가장 확실한 방법:</span>
+                </div>
+                <p>
+                  아래 <strong>[클립보드에 전체 복사]</strong> 버튼을 누른 뒤, AI Studio 대화창에 <strong>붙여넣기(Ctrl + V)</strong>만 해주시면, 메인 소스코드에 영구 저장되어 <strong>전 세계 모든 방문자의 스마트폰/PC에서 즉시 똑같이 재생</strong>됩니다!
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs font-bold text-neutral-700">
+                  <span>데이터 미리보기 (JSON 포맷)</span>
+                  <span className="text-[11px] font-normal text-neutral-400">
+                    전체 선택 후 직접 복사도 가능합니다.
+                  </span>
+                </div>
+                <textarea
+                  readOnly
+                  value={activeVideosJson}
+                  onFocus={(e) => e.target.select()}
+                  rows={8}
+                  className="w-full font-mono text-[11px] p-3 bg-neutral-900 text-emerald-400 rounded-xl border border-neutral-700 focus:outline-none select-all"
+                />
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-2 border-t border-neutral-100">
+                <button
+                  type="button"
+                  onClick={handleDownloadExportData}
+                  className="px-3.5 py-2.5 rounded-xl text-xs font-bold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>JSON 파일로 다운로드</span>
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsExportDialogOpen(false)}
+                    className="flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-bold text-neutral-600 hover:bg-neutral-100 transition-colors cursor-pointer"
+                  >
+                    닫기
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCopyExportData}
+                    className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl text-xs font-black text-white shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                      copiedDataSuccess ? 'bg-emerald-600' : 'bg-blue-600 hover:bg-blue-700 active:scale-95'
+                    }`}
+                  >
+                    {copiedDataSuccess ? (
+                      <>
+                        <Check className="w-4 h-4" />
+                        <span>복사 완료! (대화창에 붙여넣기 해주세요)</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-4 h-4" />
+                        <span>클립보드에 전체 복사</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
