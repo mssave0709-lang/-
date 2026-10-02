@@ -18,6 +18,140 @@ import {
 } from 'lucide-react';
 import { parseVideoUrl } from '../utils/videoHelper';
 
+interface PortfolioCardMediaProps {
+  item: PortfolioItem;
+  onOpenDetail: () => void;
+}
+
+// 1. 모바일 및 데스크톱 미리보기 카드 영상 컴포넌트
+const PortfolioCardMedia: React.FC<PortfolioCardMediaProps> = ({ item, onOpenDetail }) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [hasError, setHasError] = useState<boolean>(false);
+
+  const parsedVideo = useMemo(() => {
+    return item.videoUrl ? parseVideoUrl(item.videoUrl) : null;
+  }, [item.videoUrl]);
+
+  const isDirectVideo = parsedVideo && parsedVideo.type === 'direct';
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !isDirectVideo) return;
+
+    // 모바일(iOS Safari, 안드로이드 크롬/삼성인터넷) 자동재생 필수 조건
+    video.muted = true;
+    video.defaultMuted = true;
+
+    let isMounted = true;
+
+    const playVideo = () => {
+      if (!isMounted || !videoRef.current) return;
+      const playPromise = videoRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            if (isMounted) setIsPlaying(true);
+          })
+          .catch((err) => {
+            // video.play()가 실패하면 대체 화면을 띄우지 않고 poster 위에 재생 버튼 표시
+            console.log('Mobile preview autoplay prevented:', err);
+            if (isMounted) setIsPlaying(false);
+          });
+      }
+    };
+
+    if (video.readyState >= 2) {
+      playVideo();
+    } else {
+      video.addEventListener('loadeddata', playVideo, { once: true });
+      video.addEventListener('canplay', playVideo, { once: true });
+    }
+
+    return () => {
+      isMounted = false;
+      if (video) {
+        video.removeEventListener('loadeddata', playVideo);
+        video.removeEventListener('canplay', playVideo);
+      }
+    };
+  }, [item.videoUrl, isDirectVideo]);
+
+  const handleCardPlayClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const video = videoRef.current;
+    if (video) {
+      video.muted = true;
+      video.play()
+        .then(() => setIsPlaying(true))
+        .catch(() => {
+          onOpenDetail();
+        });
+    } else {
+      onOpenDetail();
+    }
+  };
+
+  return (
+    <div className="relative aspect-[16/9] w-full overflow-hidden rounded-xl bg-zinc-950 border border-zinc-200 shadow-xs">
+      {isDirectVideo && !hasError ? (
+        <video
+          ref={videoRef}
+          src={item.videoUrl}
+          poster={item.videoThumbnail}
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="metadata"
+          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+          onPlay={() => setIsPlaying(true)}
+          onPause={() => setIsPlaying(false)}
+          onError={() => {
+            setHasError(true);
+            setIsPlaying(false);
+          }}
+        />
+      ) : (
+        <img 
+          src={item.videoThumbnail} 
+          alt={item.title} 
+          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+          onError={(e) => {
+            (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?q=80&w=1400&auto=format&fit=crop';
+          }}
+        />
+      )}
+
+      {/* Gradient Scrim */}
+      <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-30 group-hover:opacity-60 transition-opacity pointer-events-none" />
+
+      {/* Play Button Overlay: video.play()가 실패하거나 대기 중일 때 poster 위에 재생 버튼 표시하여 탭 시 즉시 재생 */}
+      {!isPlaying && (
+        <div 
+          onClick={handleCardPlayClick}
+          className="absolute inset-0 flex items-center justify-center bg-black/20 backdrop-blur-[0.5px] cursor-pointer z-10 transition-all hover:bg-black/30"
+        >
+          <button
+            type="button"
+            onClick={handleCardPlayClick}
+            className="w-12 h-12 rounded-full bg-white/95 hover:bg-white text-zinc-950 flex items-center justify-center shadow-xl hover:scale-110 active:scale-95 transition-all cursor-pointer"
+            title="미리보기 재생"
+            aria-label="미리보기 재생"
+          >
+            <Play className="w-5 h-5 fill-current ml-0.5 text-zinc-900" />
+          </button>
+        </div>
+      )}
+
+      {/* Duration Badge */}
+      <div className="absolute bottom-2.5 right-2.5 px-2 py-0.5 bg-black/75 backdrop-blur-md rounded text-[11px] font-mono text-white font-medium z-10 pointer-events-none">
+        {item.duration}
+      </div>
+    </div>
+  );
+};
+
 interface PortfolioGalleryProps {
   items: PortfolioItem[];
   onSelectItem: (item: PortfolioItem) => void;
@@ -36,6 +170,37 @@ export const PortfolioGallery: React.FC<PortfolioGalleryProps> = ({
   const [activeFrameIndex, setActiveFrameIndex] = useState<number>(0);
   const [activeCategory, setActiveCategory] = useState<PortfolioCategory>('전체보기');
   const [mediaViewMode, setMediaViewMode] = useState<'video' | 'stills'>('video');
+
+  // 상세 보기 팝업 플레이어 상태 (자동재생하지 않고, 사용자가 재생 버튼을 눌렀을 때 소리와 함께 재생)
+  const modalVideoRef = useRef<HTMLVideoElement>(null);
+  const [isModalPlaying, setIsModalPlaying] = useState<boolean>(false);
+
+  useEffect(() => {
+    setIsModalPlaying(false);
+  }, [selectedItem, mediaViewMode]);
+
+  const handleModalPlay = () => {
+    const video = modalVideoRef.current;
+    if (!video) return;
+    video.muted = false; // 소리와 함께 재생
+    video.volume = 1;
+    const playPromise = video.play();
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => setIsModalPlaying(true))
+        .catch((err) => {
+          console.warn('Playback with sound blocked on user gesture:', err);
+          // 브라우저 정책 안전 대비
+          video.muted = true;
+          video.play()
+            .then(() => {
+              setIsModalPlaying(true);
+              video.muted = false;
+            })
+            .catch(console.error);
+        });
+    }
+  };
 
   // Dynamic filter tabs: '전체보기' + 관리 창구에서 활성화된 카테고리만 동기화 (고정 기본값 없음, 자유롭게 생성/삭제)
   const filterTabs: PortfolioCategory[] = useMemo(() => {
@@ -248,32 +413,11 @@ export const PortfolioGallery: React.FC<PortfolioGalleryProps> = ({
                 onClick={() => handleOpenDetail(item)}
                 className="group cursor-pointer flex flex-col space-y-3 bg-white border border-zinc-200 hover:border-zinc-400 rounded-2xl p-3.5 transition-all hover:shadow-lg relative"
               >
-                {/* 1. Media Container */}
-                <div className="relative aspect-[16/9] w-full overflow-hidden rounded-xl bg-zinc-100 border border-zinc-200 shadow-xs">
-                  <img 
-                    src={item.videoThumbnail} 
-                    alt={item.title} 
-                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?q=80&w=1400&auto=format&fit=crop';
-                    }}
-                  />
-
-                  {/* Gradient Scrim */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-30 group-hover:opacity-60 transition-opacity" />
-
-                  {/* Hover Play Button */}
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <div className="w-12 h-12 rounded-full bg-white text-zinc-950 flex items-center justify-center opacity-0 group-hover:opacity-100 group-hover:scale-105 shadow-xl transition-all duration-300">
-                      <Play className="w-5 h-5 fill-current ml-0.5" />
-                    </div>
-                  </div>
-
-                  {/* Duration Badge */}
-                  <div className="absolute bottom-2.5 right-2.5 px-2 py-0.5 bg-black/75 backdrop-blur-md rounded text-[11px] font-mono text-white font-medium">
-                    {item.duration}
-                  </div>
-                </div>
+                {/* 1. Media Container: 모바일/데스크톱 카드 프리뷰 비디오 (muted, playsInline, autoPlay, loop, poster 및 터치 재생 지원) */}
+                <PortfolioCardMedia 
+                  item={item} 
+                  onOpenDetail={() => handleOpenDetail(item)} 
+                />
 
                 {/* 2. 각 썸네일 아래 타겟 업종 태그 텍스트 영역 (Target Industry Tags Area) */}
                 <div className="flex flex-wrap items-center gap-1.5 pt-1">
@@ -407,8 +551,8 @@ export const PortfolioGallery: React.FC<PortfolioGalleryProps> = ({
               {/* Media Display Area: Player vs Still Scenes */}
               <div className="rounded-xl overflow-hidden bg-black border border-zinc-800 relative">
                 {mediaViewMode === 'video' && selectedItem.videoUrl ? (
-                  /* 1. Video Player Mode (Direct Video, YouTube, Vimeo 통합 지원) */
-                  <div className="relative aspect-[16/9] w-full overflow-hidden bg-black flex items-center justify-center">
+                  /* 1. Video Player Mode (상세 팝업: 자동재생 X, 사용자가 재생 버튼을 눌렀을 때 소리와 함께 재생) */
+                  <div className="relative aspect-[16/9] w-full overflow-hidden bg-black flex items-center justify-center select-none">
                     {(() => {
                       const parsed = parseVideoUrl(selectedItem.videoUrl);
                       if (parsed.type === 'youtube' || parsed.type === 'vimeo') {
@@ -423,15 +567,42 @@ export const PortfolioGallery: React.FC<PortfolioGalleryProps> = ({
                         );
                       }
                       return (
-                        <video
-                          src={selectedItem.videoUrl}
-                          poster={selectedItem.videoThumbnail}
-                          controls
-                          autoPlay
-                          loop
-                          playsInline
-                          className="w-full h-full object-contain"
-                        />
+                        <>
+                          <video
+                            ref={modalVideoRef}
+                            key={selectedItem.id + selectedItem.videoUrl}
+                            src={selectedItem.videoUrl}
+                            poster={selectedItem.videoThumbnail}
+                            controls
+                            playsInline
+                            preload="metadata"
+                            onPlay={() => setIsModalPlaying(true)}
+                            onPause={() => setIsModalPlaying(false)}
+                            onEnded={() => setIsModalPlaying(false)}
+                            className="w-full h-full object-contain"
+                          />
+
+                          {/* 사용자가 재생 버튼을 눌렀을 때 소리와 함께 재생되도록 하는 오버레이 */}
+                          {!isModalPlaying && (
+                            <div 
+                              onClick={handleModalPlay}
+                              className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[1px] cursor-pointer z-20 transition-all hover:bg-black/30"
+                            >
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleModalPlay();
+                                }}
+                                className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white/95 hover:bg-white text-zinc-950 flex items-center justify-center shadow-2xl hover:scale-110 active:scale-95 transition-all cursor-pointer"
+                                title="소리와 함께 재생"
+                                aria-label="소리와 함께 재생"
+                              >
+                                <Play className="w-7 h-7 sm:w-8 sm:h-8 fill-current ml-1 text-zinc-900" />
+                              </button>
+                            </div>
+                          )}
+                        </>
                       );
                     })()}
                   </div>
