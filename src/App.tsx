@@ -104,7 +104,14 @@ export default function App() {
         setPortfolioItems((prev) => {
           return cloudItems.map((cItem) => {
             const existing = prev.find((p) => p.id === cItem.id);
-            if (existing && existing.hasCustomVideo && existing.videoUrl) {
+            // If the cloud item already has a valid external videoUrl (YouTube, Vimeo, MP4 direct link),
+            // ALWAYS prioritize the cloud item videoUrl!
+            if (
+              existing &&
+              existing.hasCustomVideo &&
+              existing.videoUrl &&
+              (!cItem.videoUrl || cItem.videoUrl.trim() === '' || cItem.videoUrl.startsWith('blob:'))
+            ) {
               return {
                 ...cItem,
                 hasCustomVideo: true,

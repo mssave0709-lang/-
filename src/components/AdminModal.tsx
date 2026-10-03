@@ -66,7 +66,7 @@ import {
   getStoredCustomCategories, 
   saveStoredCustomCategories 
 } from '../utils/categoryStorage';
-import { parseVideoUrl } from '../utils/videoHelper';
+import { parseVideoUrl, extractCleanVideoUrl } from '../utils/videoHelper';
 import { auth, signInWithGoogle, signOutAdmin } from '../firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
 
@@ -723,11 +723,14 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     setFormThumbnail(item.videoThumbnail);
     setThumbnailFileName('');
     setThumbnailMode('upload');
-    setFormVideoUrl(item.videoUrl || '');
-    setVideoFileName(item.videoUrl ? '첨부된 동영상 파일' : '');
+    const existingVideoUrl = item.videoUrl ? item.videoUrl.trim() : '';
+    setFormVideoUrl(existingVideoUrl);
+    setVideoFileName(existingVideoUrl ? '등록된 영상' : '');
     setVideoFileSize('');
     setPendingVideoBlob(null);
-    setVideoMode('upload');
+    // If the item has an external web link (e.g. YouTube, Vimeo, MP4 link), automatically open the URL tab!
+    const isExternalVideo = Boolean(existingVideoUrl && !existingVideoUrl.startsWith('blob:') && !existingVideoUrl.startsWith('data:'));
+    setVideoMode(isExternalVideo ? 'url' : 'upload');
     const frames = item.videoFrames || [];
     setFormFrames(frames);
     setFormFramesText(frames.join('\n'));
@@ -758,14 +761,33 @@ export const AdminModal: React.FC<AdminModalProps> = ({
         ? `video-${Date.now()}` 
         : (editingItem ? editingItem.id : `video-${Date.now()}`);
 
-      // If a new video file was attached, save it safely to IndexedDB
-      let finalHasCustomVideo = editingItem?.hasCustomVideo || false;
-      if (pendingVideoBlob) {
-        try {
-          await saveVideoBlob(targetId, pendingVideoBlob);
+      // Clean and extract the pure video URL
+      const cleanedVideoUrl = extractCleanVideoUrl(formVideoUrl);
+
+      let finalHasCustomVideo = false;
+      let finalVideoUrl: string | undefined = undefined;
+
+      if (videoMode === 'url') {
+        // User explicitly specified an external video link
+        finalVideoUrl = cleanedVideoUrl ? cleanedVideoUrl : undefined;
+        finalHasCustomVideo = false;
+        // Clean up any local IndexedDB blob to avoid conflict
+        deleteVideoBlob(targetId).catch(() => {});
+      } else {
+        // videoMode is 'upload'
+        if (pendingVideoBlob) {
+          try {
+            await saveVideoBlob(targetId, pendingVideoBlob);
+            finalHasCustomVideo = true;
+            finalVideoUrl = formVideoUrl; // blob URL in memory
+          } catch (dbErr) {
+            console.warn('IndexedDB persistence warning (browser session fallback active):', dbErr);
+          }
+        } else if (editingItem?.hasCustomVideo) {
           finalHasCustomVideo = true;
-        } catch (dbErr) {
-          console.warn('IndexedDB persistence warning (browser session fallback active):', dbErr);
+          finalVideoUrl = formVideoUrl || undefined;
+        } else {
+          finalVideoUrl = cleanedVideoUrl ? cleanedVideoUrl : undefined;
         }
       }
 
@@ -785,7 +807,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({
         productionNotes: formProductionNotes.trim() || undefined,
         targetAudience: formTargetAudience.trim() || undefined,
         videoThumbnail: formThumbnail.trim() || (parsedFrames[0] || 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?q=80&w=1400&auto=format&fit=crop'),
-        videoUrl: formVideoUrl.trim() || undefined,
+        videoUrl: finalVideoUrl,
         hasCustomVideo: finalHasCustomVideo,
         videoFrames: parsedFrames.length > 0 ? parsedFrames : [formThumbnail.trim() || 'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb?q=80&w=1400&auto=format&fit=crop'],
         motionFeatures: parsedFeatures.length > 0 ? parsedFeatures : ['맞춤 모션 그래픽 연출', '선명한 60fps 고화질 영상']
@@ -2337,8 +2359,12 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                               <input
                                 type="text"
                                 value={formVideoUrl}
-                                onChange={(e) => setFormVideoUrl(e.target.value)}
-                                placeholder="예: https://youtu.be/xxx 또는 https://vimeo.com/xxx 또는 https://example.com/video.mp4"
+                                onChange={(e) => {
+                                  const raw = e.target.value;
+                                  const cleaned = extractCleanVideoUrl(raw);
+                                  setFormVideoUrl(cleaned || raw);
+                                }}
+                                placeholder="유튜브/비메오 링크 또는 MP4 영상 주소 (예: https://youtu.be/xxx)"
                                 className="flex-1 min-w-0 px-3.5 py-2.5 bg-white text-neutral-900 placeholder:text-neutral-400 border border-neutral-300 rounded-lg text-xs font-mono focus:border-neutral-900 focus:outline-none"
                               />
                               {formVideoUrl && (

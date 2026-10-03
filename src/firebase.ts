@@ -85,10 +85,18 @@ export async function signOutAdmin() {
 export async function savePortfolioItemToFirestore(item: PortfolioItem): Promise<void> {
   const path = `portfolio_items/${item.id}`;
   try {
-    await setDoc(doc(db, 'portfolio_items', item.id), {
+    const cleanItemData: Record<string, any> = {
       ...item,
+      videoUrl: item.videoUrl ? item.videoUrl.trim() : '',
       updatedAt: new Date().toISOString()
-    });
+    };
+    // Strip out all undefined values so Firestore never throws 'Unsupported field value: undefined'
+    for (const key of Object.keys(cleanItemData)) {
+      if (cleanItemData[key] === undefined) {
+        delete cleanItemData[key];
+      }
+    }
+    await setDoc(doc(db, 'portfolio_items', item.id), cleanItemData);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
