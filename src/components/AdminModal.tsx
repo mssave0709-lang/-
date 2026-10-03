@@ -38,7 +38,11 @@ import {
   User,
   Inbox,
   CheckCheck,
-  Monitor
+  Monitor,
+  Code,
+  FileText,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { 
   compressImageFile, 
@@ -241,40 +245,10 @@ export const AdminModal: React.FC<AdminModalProps> = ({
   // Data Export / Code Sync Modal State
   const [isExportDialogOpen, setIsExportDialogOpen] = useState<boolean>(false);
   const [copiedDataSuccess, setCopiedDataSuccess] = useState<boolean>(false);
-
-  const activeVideosJson = React.useMemo(() => {
-    const activeItems = items.filter(i => !i.isDeleted);
-    return JSON.stringify(activeItems, null, 2);
-  }, [items]);
-
-  const handleCopyExportData = () => {
-    try {
-      navigator.clipboard.writeText(activeVideosJson);
-      setCopiedDataSuccess(true);
-      showToast('전체 영상 데이터(JSON)가 복사되었습니다! AI Studio 대화창에 붙여넣어 주세요.');
-      setTimeout(() => setCopiedDataSuccess(false), 3000);
-    } catch {
-      showToast('텍스트 창을 전체 선택(Ctrl+A) 후 복사(Ctrl+C)해주세요.');
-    }
-  };
-
-  const handleDownloadExportData = () => {
-    try {
-      const blob = new Blob([activeVideosJson], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `gangwon_portfolio_data_${new Date().toISOString().slice(0, 10)}.json`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      showToast('데이터 백업 파일이 다운로드되었습니다.');
-    } catch (e) {
-      console.error(e);
-      showToast('다운로드 처리 중 오류가 발생했습니다.');
-    }
-  };
+  const [copiedItemId, setCopiedItemId] = useState<string | null>(null);
+  const [exportTab, setExportTab] = useState<'single' | 'all'>('single');
+  const [exportSearchQuery, setExportSearchQuery] = useState<string>('');
+  const [expandedPreviewId, setExpandedPreviewId] = useState<string | null>(null);
 
   // Authentication state
   const [passwordInput, setPasswordInput] = useState<string>('');
@@ -337,6 +311,68 @@ export const AdminModal: React.FC<AdminModalProps> = ({
     setTimeout(() => {
       setSuccessToast('');
     }, 3200);
+  };
+
+  // Helper to sanitize an item for clipboard copying / code persistence
+  const getSanitizedItemForCopy = (item: PortfolioItem) => {
+    if (item.videoUrl && (item.videoUrl.startsWith('blob:') || item.videoUrl.startsWith('data:video/'))) {
+      return {
+        ...item,
+        hasCustomVideo: true,
+        videoUrl: undefined
+      };
+    }
+    return item;
+  };
+
+  const activeVideosJson = React.useMemo(() => {
+    const activeItems = items.filter(i => !i.isDeleted);
+    const sanitized = activeItems.map(getSanitizedItemForCopy);
+    return JSON.stringify(sanitized, null, 2);
+  }, [items]);
+
+  const handleCopySingleItem = (item: PortfolioItem) => {
+    try {
+      const sanitized = getSanitizedItemForCopy(item);
+      const singleJson = JSON.stringify(sanitized, null, 2);
+      navigator.clipboard.writeText(singleJson);
+      setCopiedItemId(item.id);
+      showToast(`'${item.title}' 영상 데이터가 클립보드에 복사되었습니다! AI Studio 대화창에 붙여넣어 주세요.`);
+      setTimeout(() => {
+        setCopiedItemId((current) => (current === item.id ? null : current));
+      }, 3000);
+    } catch {
+      showToast('텍스트 창을 클릭하여 전체 선택 후 복사(Ctrl+C)해주세요.');
+    }
+  };
+
+  const handleCopyExportData = () => {
+    try {
+      navigator.clipboard.writeText(activeVideosJson);
+      setCopiedDataSuccess(true);
+      showToast('전체 영상 데이터(JSON)가 복사되었습니다! AI Studio 대화창에 붙여넣어 주세요.');
+      setTimeout(() => setCopiedDataSuccess(false), 3000);
+    } catch {
+      showToast('텍스트 창을 전체 선택(Ctrl+A) 후 복사(Ctrl+C)해주세요.');
+    }
+  };
+
+  const handleDownloadExportData = () => {
+    try {
+      const blob = new Blob([activeVideosJson], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `gangwon_portfolio_data_${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('데이터 백업 파일이 다운로드되었습니다.');
+    } catch (e) {
+      console.error(e);
+      showToast('다운로드 처리 중 오류가 발생했습니다.');
+    }
   };
 
   // Custom in-app Confirmation Dialog state (replaces window.confirm)
@@ -1742,12 +1778,39 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         시공사진은 제외하고, 작업 영상의 스펙과 모션 그래픽 연출 포인트를 입력해주세요.
                       </p>
                     </div>
-                    <button
-                      onClick={() => setIsEditing(false)}
-                      className="self-start sm:self-auto px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-xs font-bold text-neutral-700 rounded-lg transition-colors w-full sm:w-auto text-center"
-                    >
-                      목록으로 돌아가기
-                    </button>
+                    <div className="flex items-center gap-2 w-full sm:w-auto self-start sm:self-auto">
+                      {editingItem && (
+                        <button
+                          type="button"
+                          onClick={() => handleCopySingleItem(editingItem)}
+                          className={`flex-1 sm:flex-initial justify-center flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer border ${
+                            copiedItemId === editingItem.id
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                              : 'text-blue-700 bg-blue-50 hover:bg-blue-100 border-blue-200'
+                          }`}
+                          title="이 영상의 데이터만 클립보드에 복사"
+                        >
+                          {copiedItemId === editingItem.id ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>복사 완료!</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5 text-blue-600" />
+                              <span>이 영상 복사</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setIsEditing(false)}
+                        className="flex-1 sm:flex-initial px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 text-xs font-bold text-neutral-700 rounded-lg transition-colors text-center cursor-pointer"
+                      >
+                        목록으로 돌아가기
+                      </button>
+                    </div>
                   </div>
 
                   <form onSubmit={handleSaveForm} noValidate className="space-y-5">
@@ -2582,7 +2645,31 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                           </button>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                      <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+                        {editingItem && (
+                          <button
+                            type="button"
+                            onClick={() => handleCopySingleItem(editingItem)}
+                            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-lg border text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-colors ${
+                              copiedItemId === editingItem.id
+                                ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                                : 'border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700'
+                            }`}
+                            title="현재 수정 중인 이 영상 데이터만 클립보드에 복사"
+                          >
+                            {copiedItemId === editingItem.id ? (
+                              <>
+                                <Check className="w-4 h-4 text-emerald-600" />
+                                <span>복사 완료!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-4 h-4 text-blue-600" />
+                                <span>이 영상 클립보드 복사</span>
+                              </>
+                            )}
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => setIsEditing(false)}
@@ -2910,13 +2997,35 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                         </div>
 
                         {/* Right: Actions */}
-                        <div className="flex items-center gap-2 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-neutral-100 shrink-0">
+                        <div className="flex items-center gap-1.5 sm:gap-2 w-full sm:w-auto justify-end pt-2 sm:pt-0 border-t sm:border-t-0 border-neutral-100 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleCopySingleItem(item)}
+                            className={`flex-1 sm:flex-initial justify-center flex items-center gap-1 px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-lg transition-colors cursor-pointer border ${
+                              copiedItemId === item.id
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                                : 'text-blue-700 bg-blue-50 hover:bg-blue-100 border-blue-200'
+                            }`}
+                            title="이 영상의 데이터(JSON)만 클립보드에 복사하여 AI Studio에 전달"
+                          >
+                            {copiedItemId === item.id ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                <span>복사 완료!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5 text-blue-600" />
+                                <span>클립보드 복사</span>
+                              </>
+                            )}
+                          </button>
                           <button
                             type="button"
                             onClick={() => handleStartEdit(item)}
                             className="flex-1 sm:flex-initial justify-center flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 rounded-lg transition-colors cursor-pointer"
                           >
-                            <Edit3 className="w-3.5 h-3.5 text-blue-600" />
+                            <Edit3 className="w-3.5 h-3.5 text-neutral-600" />
                             <span>수정</span>
                           </button>
                           <button
@@ -3037,27 +3146,28 @@ export const AdminModal: React.FC<AdminModalProps> = ({
         {/* Export Data / Code Sync Dialog */}
         {isExportDialogOpen && (
           <div 
-            className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150"
+            className="fixed inset-0 z-[130] flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150"
             onClick={(e) => {
               e.stopPropagation();
               setIsExportDialogOpen(false);
             }}
           >
             <div 
-              className="bg-white rounded-2xl max-w-xl w-full p-5 sm:p-6 shadow-2xl border border-neutral-200 space-y-4 animate-in zoom-in-95 duration-150"
+              className="bg-white rounded-2xl max-w-2xl w-full p-4 sm:p-6 shadow-2xl border border-neutral-200 space-y-4 animate-in zoom-in-95 duration-150 max-h-[90vh] flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between pb-3 border-b border-neutral-100">
+              {/* Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-neutral-100 shrink-0">
                 <div className="flex items-center gap-2.5">
                   <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center font-bold shrink-0">
                     <Copy className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-base font-extrabold text-neutral-900">
-                      등록된 작업 영상 데이터 내보내기 / 동기화 백업
+                    <h3 className="text-base sm:text-lg font-extrabold text-neutral-900">
+                      등록된 작업 영상 데이터 내보내기 / 클립보드 복사
                     </h3>
                     <p className="text-xs text-neutral-500">
-                      현재 등록된 활성 영상 총 {items.filter(i => !i.isDeleted).length}개의 데이터입니다.
+                      현재 등록된 활성 영상 총 {activePortfolioItems.length}개의 데이터입니다.
                     </p>
                   </div>
                 </div>
@@ -3070,37 +3180,220 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                 </button>
               </div>
 
-              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3.5 space-y-1.5 text-xs text-blue-900 leading-relaxed">
-                <div className="font-extrabold flex items-center gap-1.5 text-blue-950">
-                  <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
-                  <span>다른 사람에게도 영상이 보이게 하는 가장 확실한 방법:</span>
-                </div>
-                <p>
-                  아래 <strong>[클립보드에 전체 복사]</strong> 버튼을 누른 뒤, AI Studio 대화창에 <strong>붙여넣기(Ctrl + V)</strong>만 해주시면, 메인 소스코드에 영구 저장되어 <strong>전 세계 모든 방문자의 스마트폰/PC에서 즉시 똑같이 재생</strong>됩니다!
-                </p>
-              </div>
-
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs font-bold text-neutral-700">
-                  <span>데이터 미리보기 (JSON 포맷)</span>
-                  <span className="text-[11px] font-normal text-neutral-400">
-                    전체 선택 후 직접 복사도 가능합니다.
+              {/* Tab Selector: 개별 복사 vs 전체 일괄 복사 */}
+              <div className="flex border-b border-neutral-200 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setExportTab('single')}
+                  className={`flex-1 py-2.5 px-3 text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 border-b-2 transition-all cursor-pointer ${
+                    exportTab === 'single'
+                      ? 'border-blue-600 text-blue-600 bg-blue-50/50'
+                      : 'border-transparent text-neutral-500 hover:text-neutral-900 hover:bg-neutral-50'
+                  }`}
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>영상 1개씩 개별 복사</span>
+                  <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700">
+                    용량 초과 방지 · 권장
                   </span>
-                </div>
-                <textarea
-                  readOnly
-                  value={activeVideosJson}
-                  onFocus={(e) => e.target.select()}
-                  rows={8}
-                  className="w-full font-mono text-[11px] p-3 bg-neutral-900 text-emerald-400 rounded-xl border border-neutral-700 focus:outline-none select-all"
-                />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExportTab('all')}
+                  className={`flex-1 py-2.5 px-3 text-xs sm:text-sm font-extrabold flex items-center justify-center gap-1.5 border-b-2 transition-all cursor-pointer ${
+                    exportTab === 'all'
+                      ? 'border-blue-600 text-blue-600 bg-blue-50/50'
+                      : 'border-transparent text-neutral-500 hover:text-neutral-900 hover:bg-neutral-50'
+                  }`}
+                >
+                  <Copy className="w-4 h-4" />
+                  <span>전체 일괄 복사 & 다운로드</span>
+                </button>
               </div>
 
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-2 border-t border-neutral-100">
+              {/* Tab 1 Content: 영상 1개씩 개별 복사 */}
+              {exportTab === 'single' && (
+                <div className="space-y-3 flex-1 overflow-hidden flex flex-col min-h-0">
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 space-y-1 text-xs text-blue-900 leading-relaxed shrink-0">
+                    <div className="font-extrabold flex items-center gap-1.5 text-blue-950">
+                      <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
+                      <span>클립보드 용량이 너무 크다는 메시지가 발생할 때:</span>
+                    </div>
+                    <p className="text-[11px] sm:text-xs">
+                      영상 데이터(스틸컷, 설명 등)가 많아 전체 복사 시 브라우저 용량 한도를 초과할 수 있습니다. 아래 목록에서 필요한 영상을 <strong>[이 영상 복사]</strong> 버튼으로 1개씩 복사하여 AI Studio 대화창에 전달해주시면 오류 없이 완벽하게 등록됩니다!
+                    </p>
+                  </div>
+
+                  {/* Search filter inside modal */}
+                  <div className="relative shrink-0">
+                    <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={exportSearchQuery}
+                      onChange={(e) => setExportSearchQuery(e.target.value)}
+                      placeholder="복사할 영상 검색 (제목, 배지, 매장명, 카테고리)..."
+                      className="w-full pl-9 pr-3 py-2 bg-neutral-50 border border-neutral-200 rounded-xl text-xs text-neutral-900 placeholder:text-neutral-400 focus:outline-none focus:border-blue-500 focus:bg-white transition-colors"
+                    />
+                  </div>
+
+                  {/* Scrollable List of Videos */}
+                  <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 min-h-[200px]">
+                    {activePortfolioItems
+                      .filter((item) => {
+                        if (!exportSearchQuery.trim()) return true;
+                        const q = exportSearchQuery.toLowerCase();
+                        return (
+                          item.title.toLowerCase().includes(q) ||
+                          item.badge.toLowerCase().includes(q) ||
+                          item.clientOrStore.toLowerCase().includes(q) ||
+                          item.category.toLowerCase().includes(q)
+                        );
+                      })
+                      .map((item) => {
+                        const isCopied = copiedItemId === item.id;
+                        const isPreviewOpen = expandedPreviewId === item.id;
+                        const sanitized = getSanitizedItemForCopy(item);
+                        const itemJson = JSON.stringify(sanitized, null, 2);
+
+                        return (
+                          <div
+                            key={item.id}
+                            className={`p-3 rounded-xl border transition-all ${
+                              isCopied
+                                ? 'bg-emerald-50/70 border-emerald-300 shadow-xs'
+                                : 'bg-white border-neutral-200 hover:border-neutral-300'
+                            }`}
+                          >
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                              <div className="flex items-center gap-3 min-w-0 flex-1">
+                                <div className="w-14 h-10 sm:w-16 sm:h-11 rounded-lg overflow-hidden bg-black shrink-0 border border-neutral-200">
+                                  <img
+                                    src={item.videoThumbnail}
+                                    alt={item.title}
+                                    className="w-full h-full object-cover"
+                                  />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5 mb-0.5">
+                                    <span className="text-[10px] font-extrabold text-[#EA580C] bg-orange-50 px-1.5 py-0.2 rounded border border-orange-100 shrink-0">
+                                      {item.badge}
+                                    </span>
+                                    <span className="text-[11px] text-neutral-500 font-medium truncate">
+                                      {item.clientOrStore}
+                                    </span>
+                                  </div>
+                                  <h4 className="text-xs sm:text-sm font-bold text-neutral-900 truncate">
+                                    {item.title}
+                                  </h4>
+                                  <div className="text-[10px] text-neutral-500 flex items-center gap-2 mt-0.5">
+                                    <span>{item.category}</span>
+                                    <span>·</span>
+                                    <span>스틸컷 {item.videoFrames?.length || 0}개</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedPreviewId(isPreviewOpen ? null : item.id)}
+                                  className="px-2.5 py-1.5 rounded-lg text-xs font-semibold text-neutral-600 bg-neutral-100 hover:bg-neutral-200 transition-colors flex items-center gap-1 cursor-pointer"
+                                  title="이 영상의 JSON 코드 직접 확인"
+                                >
+                                  <Code className="w-3.5 h-3.5" />
+                                  <span>{isPreviewOpen ? '코드 닫기' : '코드 보기'}</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopySingleItem(item)}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                                    isCopied
+                                      ? 'bg-emerald-600 text-white'
+                                      : 'bg-blue-600 hover:bg-blue-700 text-white active:scale-95'
+                                  }`}
+                                >
+                                  {isCopied ? (
+                                    <>
+                                      <Check className="w-3.5 h-3.5" />
+                                      <span>복사 완료!</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="w-3.5 h-3.5" />
+                                      <span>이 영상 복사</span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Collapsible JSON Preview for this individual video */}
+                            {isPreviewOpen && (
+                              <div className="mt-3 pt-3 border-t border-neutral-200/80 space-y-1.5">
+                                <div className="flex items-center justify-between text-[11px] font-bold text-neutral-600">
+                                  <span>이 영상의 단일 JSON 데이터:</span>
+                                  <span className="text-[10px] text-neutral-400">클릭 시 전체 선택됩니다</span>
+                                </div>
+                                <textarea
+                                  readOnly
+                                  rows={5}
+                                  value={itemJson}
+                                  onFocus={(e) => e.target.select()}
+                                  className="w-full font-mono text-[10px] p-2.5 bg-neutral-900 text-emerald-400 rounded-lg border border-neutral-700 focus:outline-none select-all"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                    {activePortfolioItems.length === 0 && (
+                      <div className="text-center py-8 text-neutral-400 text-xs">
+                        등록된 활성 영상이 없습니다.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Tab 2 Content: 전체 일괄 복사 & 파일 다운로드 */}
+              {exportTab === 'all' && (
+                <div className="space-y-3 flex-1 overflow-hidden flex flex-col min-h-0">
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 leading-relaxed shrink-0">
+                    <div className="font-extrabold flex items-center gap-1.5 text-amber-950">
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>전체 복사 시 용량 한도 주의사항:</span>
+                    </div>
+                    <p className="mt-1 text-[11px] sm:text-xs">
+                      등록된 영상이 많거나 고해상도 스틸컷이 포함된 경우 브라우저 클립보드 용량 한도를 초과할 수 있습니다. 오류 발생 시 상단 <strong>[영상 1개씩 개별 복사]</strong> 탭을 이용하시거나, 아래 <strong>[JSON 파일로 다운로드]</strong>를 이용해주세요.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5 flex-1 flex flex-col min-h-0">
+                    <div className="flex items-center justify-between text-xs font-bold text-neutral-700 shrink-0">
+                      <span>전체 데이터 미리보기 (JSON 포맷)</span>
+                      <span className="text-[11px] font-normal text-neutral-400">
+                        전체 선택(Ctrl+A) 후 직접 복사 가능
+                      </span>
+                    </div>
+                    <textarea
+                      readOnly
+                      value={activeVideosJson}
+                      onFocus={(e) => e.target.select()}
+                      className="w-full flex-1 min-h-[160px] font-mono text-[11px] p-3 bg-neutral-900 text-emerald-400 rounded-xl border border-neutral-700 focus:outline-none select-all"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Modal Footer */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-3 border-t border-neutral-100 shrink-0">
                 <button
                   type="button"
                   onClick={handleDownloadExportData}
                   className="px-3.5 py-2.5 rounded-xl text-xs font-bold text-neutral-700 bg-neutral-100 hover:bg-neutral-200 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                  title="전체 데이터를 JSON 파일로 다운로드 (클립보드 용량 제한 없음)"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>JSON 파일로 다운로드</span>
@@ -3114,25 +3407,28 @@ export const AdminModal: React.FC<AdminModalProps> = ({
                   >
                     닫기
                   </button>
-                  <button
-                    type="button"
-                    onClick={handleCopyExportData}
-                    className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl text-xs font-black text-white shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                      copiedDataSuccess ? 'bg-emerald-600' : 'bg-blue-600 hover:bg-blue-700 active:scale-95'
-                    }`}
-                  >
-                    {copiedDataSuccess ? (
-                      <>
-                        <Check className="w-4 h-4" />
-                        <span>복사 완료! (대화창에 붙여넣기 해주세요)</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="w-4 h-4" />
-                        <span>클립보드에 전체 복사</span>
-                      </>
-                    )}
-                  </button>
+
+                  {exportTab === 'all' && (
+                    <button
+                      type="button"
+                      onClick={handleCopyExportData}
+                      className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl text-xs font-black text-white shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                        copiedDataSuccess ? 'bg-emerald-600' : 'bg-blue-600 hover:bg-blue-700 active:scale-95'
+                      }`}
+                    >
+                      {copiedDataSuccess ? (
+                        <>
+                          <Check className="w-4 h-4" />
+                          <span>복사 완료! (대화창에 붙여넣기 해주세요)</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-4 h-4" />
+                          <span>클립보드에 전체 복사</span>
+                        </>
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
