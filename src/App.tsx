@@ -17,8 +17,10 @@ import { PortfolioItem, NavigationTab } from './types';
 import { PORTFOLIO_ITEMS as DEFAULT_PORTFOLIO_ITEMS } from './data/portfolioData';
 import { getAllVideoBlobs } from './utils/indexedDbHelper';
 import { getStoredCustomCategories, saveStoredCustomCategories } from './utils/categoryStorage';
+import { db, testFirestoreConnection, seedInitialPortfolioItems, savePortfolioItemToFirestore } from './firebase';
+import { collection, onSnapshot, doc, setDoc } from 'firebase/firestore';
 
-const LOCAL_STORAGE_KEY = 'gfl_portfolio_items_v7';
+const LOCAL_STORAGE_KEY = 'gfl_portfolio_items_v9';
 const ADMIN_SESSION_KEY = 'gfl_admin_session_auth';
 
 export default function App() {
@@ -31,6 +33,14 @@ export default function App() {
   const handleSaveCustomCategories = (updatedCategories: string[]) => {
     setCustomCategories(updatedCategories);
     saveStoredCustomCategories(updatedCategories);
+    try {
+      setDoc(doc(db, 'settings', 'categories'), {
+        list: updatedCategories,
+        updatedAt: new Date().toISOString()
+      }).catch((e) => console.warn('Categories cloud sync note:', e));
+    } catch (e) {
+      console.warn('Categories cloud sync err:', e);
+    }
   };
 
   // 1. Dynamic Portfolio Items State with LocalStorage Persistence
@@ -44,7 +54,7 @@ export default function App() {
         }
       }
       // Check previous version cache and preserve any user-created custom items
-      const prevSaved = localStorage.getItem('gfl_portfolio_items_v6') || localStorage.getItem('gfl_portfolio_items_v5');
+      const prevSaved = localStorage.getItem('gfl_portfolio_items_v8') || localStorage.getItem('gfl_portfolio_items_v7') || localStorage.getItem('gfl_portfolio_items_v6') || localStorage.getItem('gfl_portfolio_items_v5');
       if (prevSaved) {
         const prevParsed = JSON.parse(prevSaved);
         if (Array.isArray(prevParsed)) {
@@ -61,6 +71,59 @@ export default function App() {
     }
     return DEFAULT_PORTFOLIO_ITEMS;
   });
+
+  // 1-2. Connect to Firebase Firestore for Real-time Cloud Sync across all devices
+  useEffect(() => {
+    testFirestoreConnection().then((connected) => {
+      if (connected) {
+        seedInitialPortfolioItems(DEFAULT_PORTFOLIO_ITEMS);
+      }
+    });
+
+    const unsubscribe = onSnapshot(collection(db, 'portfolio_items'), (snapshot) => {
+      if (!snapshot.empty) {
+        const cloudItems: PortfolioItem[] = [];
+        snapshot.forEach((docSnap) => {
+          cloudItems.push(docSnap.data() as PortfolioItem);
+        });
+
+        // Merge with any custom in-memory IndexedDB video blobs
+        setPortfolioItems((prev) => {
+          return cloudItems.map((cItem) => {
+            const existing = prev.find((p) => p.id === cItem.id);
+            if (existing && existing.hasCustomVideo && existing.videoUrl) {
+              return {
+                ...cItem,
+                hasCustomVideo: true,
+                videoUrl: existing.videoUrl
+              };
+            }
+            return cItem;
+          });
+        });
+      }
+    }, (error) => {
+      console.warn('Firestore real-time sync note:', error);
+    });
+
+    // Also sync categories if present
+    const unsubscribeCat = onSnapshot(doc(db, 'settings', 'categories'), (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        if (Array.isArray(data?.list) && data.list.length > 0) {
+          setCustomCategories(data.list);
+          saveStoredCustomCategories(data.list);
+        }
+      }
+    }, (error) => {
+      console.warn('Categories sync note:', error);
+    });
+
+    return () => {
+      unsubscribe();
+      unsubscribeCat();
+    };
+  }, []);
 
   // Load video attachments stored in IndexedDB on application start
   useEffect(() => {
@@ -146,7 +209,7 @@ export default function App() {
     }
   };
 
-  // Save updated portfolio items safely with storage protection
+  // Save updated portfolio items safely with storage protection and real-time Firestore sync
   const handleSavePortfolioItems = (updated: PortfolioItem[]) => {
     setPortfolioItems(updated);
     try {
@@ -161,6 +224,13 @@ export default function App() {
         return item;
       });
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(sanitizedForStorage));
+
+      // Real-time synchronization to Google Cloud Firestore
+      sanitizedForStorage.forEach((item) => {
+        savePortfolioItemToFirestore(item).catch((err) => {
+          console.warn('Failed to sync item to Firestore:', item.id, err);
+        });
+      });
     } catch (e) {
       console.warn('LocalStorage save quota exceeded, items kept in memory and IndexedDB:', e);
     }

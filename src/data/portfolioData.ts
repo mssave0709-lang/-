@@ -35,55 +35,62 @@ export const PORTFOLIO_ITEMS: PortfolioItem[] = [
   },
   {
     id: 'ad-smart-home-iot',
-    badge: '[광고]',
-    title: '미래형 라이프스타일 스마트 IoT 주거 솔루션 브랜드 영상',
-    clientOrStore: '루미엔 스마트라이프 (Lumien IoT)',
-    category: '광고',
-    targetIndustryTag: '#스타트업/테크',
-    tags: ['#스타트업/테크', '#광고', '#3D모션', '#스마트홈'],
-    duration: '00:45 풀버전',
-    videoFormat: '16:9 4K UHD 가로형 (3840×2160)',
-    summary: '스마트폰 탭 한 번으로 조명, 온도, 보안이 연결되는 첨단 스마트홈 솔루션을 감각적인 3D 그래픽과 인터랙션 모션으로 표현했습니다.',
-    description: '복잡한 테크 기술을 직관적인 비주얼 언어로 치환하여 소비자가 일상 속 편리함을 즉각적으로 체감할 수 있도록 구성한 영상입니다. 메인 박람회 부스 스크린 및 온라인 광고용으로 납품되었습니다.',
-    videoThumbnail: 'https://images.unsplash.com/photo-1558002038-1055907df827?q=80&w=1400&auto=format&fit=crop',
+    badge: '[의료/병원]',
+    title: '직장인 고질병 타파 프로젝트 - 거북목 원인과 교정 스트레칭',
+    clientOrStore: '병원/의원',
+    category: '인포그래픽',
+    targetIndustryTag: '#정형외과 #재활의학과 #직장인건강 #거북목교정',
+    tags: ['#정형외과 #재활의학과 #직장인건강 #거북목교정', '인포그래픽'],
+    duration: '00:58',
+    videoFormat: '16:9 FHD (1920x1080)',
+    summary: '거북목이 목에 주는 하중의 위험성을 알리고 일상 속 자세 교정법과 스트레칭을 안내하는 정보성 애니메이션 영상',
+    description: '목 통증을 자주 겪는 직장인들을 위해 고개가 1cm 앞으로 나올 때마다 최대 20kg의 압박이 가해진다는 사실을 시각적으로 경고하여 경각심을 줍니다. 이후 벽을 이용한 10초 자가진단법, 모니터 눈높이 맞추기, 수건을 활용한 C커브 스트레칭 등 실생활에서 바로 따라 할 수 있는 구체적인 해결책을 제시하여 실질적인 도움을 주도록 기획했습니다.',
+    videoUrl: 'https://youtu.be/BbLFQ0s4qS4',
+    videoThumbnail: 'https://img.youtube.com/vi/BbLFQ0s4qS4/maxresdefault.jpg',
     videoFrames: [
-      'https://images.unsplash.com/photo-1558002038-1055907df827?q=80&w=1400&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1513506003901-1e6a229e2d15?q=80&w=1200&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1507646227500-4d389b0012be?q=80&w=1200&auto=format&fit=crop'
+      'https://img.youtube.com/vi/BbLFQ0s4qS4/maxresdefault.jpg',
+      'https://img.youtube.com/vi/BbLFQ0s4qS4/hqdefault.jpg'
     ],
     motionFeatures: [
-      '스마트홈 IoT 기기 간 무선 신호 연결을 형상화한 라이트 라인 모션',
-      '애프터이펙트 기반의 정밀 3D 카메라 트래킹 및 HUD 인터페이스 그래픽',
-      '모던 테크 감성의 딥 블루 & 네온 사이언 톤 컬러'
-    ]
+      '20kg 하중을 직관적으로 보여주는 모루 일러스트와 하이라이트 모션',
+      '벽면 자가진단 및 수건 스트레칭 동작을 명확히 구현한 캐릭터 애니메이션',
+      '가독성을 높이는 타이포그래피 중심의 화면 구성과 자연스러운 트랜지션'
+    ],
+    keyMessage: '"퇴근만 하면 목이 뻐근? 바른 자세가 최고의 명의입니다."',
+    productionNotes: '시각적 피로도를 낮추고 편안한 느낌을 주기 위해 연보라색과 푸른색 계열의 파스텔 톤을 배경으로 사용했습니다. 무거운 하중을 표현할 때는 모루 일러스트와 붉은색 텍스트로 위험성을 직관적으로 강조했으며, 교정법 설명 시에는 깔끔한 2D 캐릭터를 활용해 남녀노소 누구나 동작을 쉽게 이해하고 따라 할 수 있도록 연출했습니다.',
+    targetAudience: '장시간 앉아있는 2040 직장인 및 스마트폰 사용량이 많은 일반 타겟. 정형외과, 통증의학과 등 의료기관 대기실 모니터 송출에 적합하며, 기업 내 휴게 공간의 디지털 사이니지나 보건소 건강 캠페인 영상으로도 적극 추천합니다.'
   },
 
   // ========================================================
   // 2. 숏폼 (Short-form / Reels / Shorts / TikTok)
   // ========================================================
   {
-    id: 'short-cafe-croissant',
-    badge: '[숏폼]',
-    title: '성수동 핫플 멜팅 바질 크루아상 침샘 자극 바이럴 숏폼',
-    clientOrStore: '버터블랑 베이커리 성수',
-    category: '숏폼',
-    targetIndustryTag: '#카페/식당',
-    tags: ['#카페/식당', '#숏폼', '#인스타릴스', '#바이럴'],
-    duration: '00:15 루프',
-    videoFormat: '9:16 세로형 4K UHD (1080×1920)',
-    summary: '바삭하게 부서지는 페이스트리 결 사운드(ASMR)와 치즈가 늘어나는 순간을 3초 만에 시선 강탈하도록 편집한 세로형 숏폼입니다.',
-    description: '인스타그램 릴스와 유튜브 쇼츠 알고리즘을 겨냥하여 첫 1초 후킹 컷과 비트 싱크 컷편집을 적용했습니다. 업로드 2주 만에 조회수 18만 회를 돌파하며 매장 방문 고객을 대폭 견인했습니다.',
-    videoThumbnail: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?q=80&w=1400&auto=format&fit=crop',
+    id: 'info-liver-health',
+    badge: '[의료/병원]',
+    title: '간 건강 골든타임 편 - 간 손상 신호와 회복 3계명',
+    clientOrStore: '건강 정보 채널',
+    category: '인포그래픽',
+    targetIndustryTag: '#병원대기실 #건강정보 #의료기관 #인포그래픽',
+    tags: ['#병원대기실 #건강정보 #의료기관 #인포그래픽', '인포그래픽'],
+    duration: '01:30',
+    videoFormat: '16:9 FHD (1920x1080)',
+    summary: '만성 피로로 오해하기 쉬운 간 손상 신호와 3040 세대를 위한 간 수치 정상화 방법을 직관적으로 담아낸 인포그래픽 영상',
+    description: '3040 세대에서 폭발적으로 증가하는 지방간의 위험성을 알리고, 진갈색 소변이나 거미상 혈관종 같은 실제 간 손상 신호를 시각적으로 쉽게 전달하도록 기획했습니다. 침묵의 장기인 간이 굳기 전 6개월의 골든타임을 강조하며, 실생활에서 적용 가능한 3가지 수칙(11시 전 수면, 액상과당 차단, 영양제 남용 중단)을 명확히 제시하여 시청자의 행동 변화를 유도합니다.',
+    videoUrl: 'https://youtu.be/dvw3JWSuAcg',
+    videoThumbnail: '/assets/stills/liver_health_golden_time.jpg',
     videoFrames: [
-      'https://images.unsplash.com/photo-1555507036-ab1f4038808a?q=80&w=1400&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1509440159596-0249088772ff?q=80&w=1200&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1549931319-a545dcf3bc73?q=80&w=1200&auto=format&fit=crop'
+      '/assets/stills/liver_health_golden_time.jpg',
+      'https://img.youtube.com/vi/dvw3JWSuAcg/maxresdefault.jpg',
+      'https://img.youtube.com/vi/dvw3JWSuAcg/hqdefault.jpg'
     ],
     motionFeatures: [
-      '경쾌한 비트 타이밍에 맞춘 0.5초 템포의 스피디한 컷 전환',
-      '시각적 만족감을 극대화한 슬로모션 버터 글레이징 줌인 효과',
-      '화면 하단 자막 가림 방지 Safe Area 맞춤 키네틱 타이포 자막'
-    ]
+      '신뢰도를 높이는 블루 앤 화이트 중심의 깔끔한 컬러 팔레트 적용',
+      '질환 증상(소변 색상 변화, 붉은 반점 등)을 직관적으로 보여주는 일러스트 모션',
+      '시청자의 시선을 끄는 핵심 키워드 중심의 텍스트 트랜지션 및 하이라이트 연출'
+    ],
+    keyMessage: '"피곤해서 그래요 하다가 큰일 나는 이 증상, 간이 보내는 마지막 비명일 수 있습니다."',
+    productionNotes: '의료 정보의 신뢰도를 높이고 시각적으로 편안함을 주기 위해 깨끗한 화이트와 신뢰감을 주는 블루 계열 톤을 메인 컬러로 사용했습니다. 다소 무거울 수 있는 질환 정보를 거부감 없이 전달하기 위해 실사 대신 깔끔한 일러스트와 픽토그램을 활용했으며, 중요한 키워드는 타이포그래피 모션으로 강조하여 가독성을 높였습니다.',
+    targetAudience: '건강과 만성 피로에 관심이 많은 30~40대 직장인 타겟. 내과, 건강검진센터 등 의료기관 대기실의 DID 사이니지 송출용으로 매우 적합하며, 인스타그램이나 유튜브 등 SNS 채널의 정보성 콘텐츠(카드뉴스 영상)로도 적극 활용할 수 있습니다.'
   },
   {
     id: 'short-balance-fit',

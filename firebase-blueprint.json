@@ -1,0 +1,54 @@
+{
+  "entities": {
+    "PortfolioItem": {
+      "title": "PortfolioItem",
+      "description": "Represents a video motion graphics portfolio project item.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "badge": { "type": "string", "maxLength": 50 },
+        "title": { "type": "string", "maxLength": 200 },
+        "clientOrStore": { "type": "string", "maxLength": 100 },
+        "category": { "type": "string", "maxLength": 50 },
+        "targetIndustryTag": { "type": "string", "maxLength": 100 },
+        "tags": { "type": "array" },
+        "duration": { "type": "string", "maxLength": 50 },
+        "videoFormat": { "type": "string", "maxLength": 100 },
+        "summary": { "type": "string", "maxLength": 1000 },
+        "description": { "type": "string", "maxLength": 3000 },
+        "videoThumbnail": { "type": "string", "maxLength": 1000 },
+        "videoUrl": { "type": "string", "maxLength": 1000 },
+        "videoFrames": { "type": "array" },
+        "motionFeatures": { "type": "array" },
+        "keyMessage": { "type": "string", "maxLength": 500 },
+        "productionNotes": { "type": "string", "maxLength": 2000 },
+        "targetAudience": { "type": "string", "maxLength": 2000 },
+        "isDeleted": { "type": "boolean" },
+        "deletedAt": { "type": "string", "maxLength": 50 },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "title", "clientOrStore", "category", "summary"]
+    },
+    "CategoryItem": {
+      "title": "CategoryItem",
+      "description": "Custom categories for filtering portfolio items.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 50 },
+        "order": { "type": "number" }
+      },
+      "required": ["name"]
+    }
+  },
+  "firestore": {
+    "/portfolio_items/{itemId}": {
+      "schema": "PortfolioItem",
+      "description": "Public portfolio showcase collection."
+    },
+    "/categories/{categoryId}": {
+      "schema": "CategoryItem",
+      "description": "Custom portfolio categories."
+    }
+  }
+}
