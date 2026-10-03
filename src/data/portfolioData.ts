@@ -6,28 +6,32 @@ export const PORTFOLIO_ITEMS: PortfolioItem[] = [
   // ========================================================
   {
     id: 'ad-wellness-spa',
-    badge: '[광고]',
-    title: '프리미엄 웰니스 스파 & 아로마 테라피 시네마틱 브랜드 광고',
-    clientOrStore: '에테르 웰니스 (Aether Spa)',
+    badge: '[IT/소프트웨어]',
+    title: '딜라이브 광고용 셋톱박스 홍보 영상 - 공간의 재발견 편',
+    clientOrStore: "딜라이브 (D'Live)",
     category: '광고',
-    targetIndustryTag: '#뷰티/헤어',
-    tags: ['#뷰티/헤어', '#광고', '#시네마틱', '#웰니스'],
-    duration: '00:30 풀버전',
-    videoFormat: '16:9 4K UHD 시네마스코프 (3840×2160)',
-    summary: '고요한 자연의 소리와 섬세한 물방울 파티클, 슬로모션 오일 드롭으로 힐링의 순간을 극대화한 하이엔드 스파 브랜드 광고 영상입니다.',
-    description: '공간의 미학적 여백과 자연 채광을 살린 실사 촬영 위에 앰비언트 사운드와 세련된 영문 폰트 레이아웃을 얹어 브랜드의 고급스러운 아이덴티티를 확립했습니다. SNS 광고 및 로비 디스플레이 송출에 최적화되었습니다.',
-    videoUrl: '/videos/hero-promo.mp4',
-    videoThumbnail: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?q=80&w=1400&auto=format&fit=crop',
+    targetIndustryTag: '#소상공인 #카페 #식당 #매장메뉴보드',
+    tags: ['#소상공인 #카페 #식당 #매장메뉴보드', '광고'],
+    duration: '00:59',
+    videoFormat: '16:9 FHD (1920x1080)',
+    summary: '복잡한 설치 없이 매장의 일상을 특별한 작품으로 만들어주는 스마트 셋톱박스 솔루션',
+    description: "소상공인(베이커리, 카페, 일반 식당)의 바쁘고 평범한 일상에 셋톱박스가 자연스럽게 스며드는 과정을 담았습니다. '선 두 개면 충분한' 간편한 설치를 강조하며, 디지털 사이니지 도입이 어렵다는 편견을 깨고 누구든 쉽게 매장 공간을 스마트하고 세련되게 바꿀 수 있다는 점을 감성적인 스토리텔링으로 기획했습니다.",
+    videoUrl: 'https://youtu.be/KLHyT2O_UkI',
+    videoThumbnail: 'https://img.youtube.com/vi/KLHyT2O_UkI/hqdefault.jpg',
     videoFrames: [
-      'https://images.unsplash.com/photo-1540555700478-4be289fbecef?q=80&w=1400&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1515377905703-c4788e51af15?q=80&w=1200&auto=format&fit=crop',
-      'https://images.unsplash.com/photo-1600334129128-685c5582fd35?q=80&w=1200&auto=format&fit=crop'
+      'https://img.youtube.com/vi/KLHyT2O_UkI/hqdefault.jpg',
+      'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?q=80&w=1400&auto=format&fit=crop',
+      'https://images.unsplash.com/photo-1554118811-1e0d58224f24?q=80&w=1200&auto=format&fit=crop'
     ],
     motionFeatures: [
-      '아로마 오일 방울 낙하 및 잔물결 파동의 120fps 초고속 매크로 촬영',
-      '브랜드 로고와 시그니처 슬로건의 소프트 페이드 트랜지션',
-      '웜베이지 톤의 차분하고 신뢰도 높은 시네마틱 컬러 그레이딩'
-    ]
+      'OPEN 팻말을 걸며 시작되는 소상공인의 따뜻한 하루 오프닝 ("불을 밝히는 매일의 시작")',
+      '복잡한 배선 없이 선 2개로 완성되는 디지털 메뉴보드 솔루션 ("작은 기기 하나, 선 두 개면 충분하니까")',
+      '카페·베이커리·요식업 점주님의 실제 니즈를 담아낸 감성 스토리텔링 ("내 작은 가게에 딱 맞게")',
+      'D\'LIVE Plus OTT 셋톱박스 본체 및 우드 텍스처 패키지 디자인 쇼케이스 ("공간의 재발견")'
+    ],
+    keyMessage: '"사장님의 정직한 하루가 작품이 되도록, 공간의 재발견"',
+    productionNotes: '이른 새벽의 차분하고 푸른 톤(새벽 공기)에서 시작해, 매장에 불을 밝히고 활기를 띠면서 따뜻한 웜톤(오렌지/우드 톤)으로 전환되는 시네마틱 컬러 그레이딩을 적용했습니다. 잔잔하고 서정적인 BGM과 내레이션을 더해 제품의 기술력보다는 사용자의 편의와 공간의 감성에 집중할 수 있도록 연출했습니다.',
+    targetAudience: '카페, 베이커리, 프랜차이즈, 일반 요식업 등 디지털 메뉴보드 도입을 고려하는 모든 소상공인 타겟. 매장 입구의 스탠드형 DID 사이니지 및 카운터 상단 가로형 메뉴보드 디스플레이 송출에 적극 권장합니다.'
   },
   {
     id: 'ad-smart-home-iot',

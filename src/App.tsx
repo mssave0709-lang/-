@@ -18,7 +18,7 @@ import { PORTFOLIO_ITEMS as DEFAULT_PORTFOLIO_ITEMS } from './data/portfolioData
 import { getAllVideoBlobs } from './utils/indexedDbHelper';
 import { getStoredCustomCategories, saveStoredCustomCategories } from './utils/categoryStorage';
 
-const LOCAL_STORAGE_KEY = 'gfl_portfolio_items_v6';
+const LOCAL_STORAGE_KEY = 'gfl_portfolio_items_v7';
 const ADMIN_SESSION_KEY = 'gfl_admin_session_auth';
 
 export default function App() {
@@ -44,7 +44,7 @@ export default function App() {
         }
       }
       // Check previous version cache and preserve any user-created custom items
-      const prevSaved = localStorage.getItem('gfl_portfolio_items_v5');
+      const prevSaved = localStorage.getItem('gfl_portfolio_items_v6') || localStorage.getItem('gfl_portfolio_items_v5');
       if (prevSaved) {
         const prevParsed = JSON.parse(prevSaved);
         if (Array.isArray(prevParsed)) {

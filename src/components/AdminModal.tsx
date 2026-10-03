@@ -315,14 +315,30 @@ export const AdminModal: React.FC<AdminModalProps> = ({
 
   // Helper to sanitize an item for clipboard copying / code persistence
   const getSanitizedItemForCopy = (item: PortfolioItem) => {
-    if (item.videoUrl && (item.videoUrl.startsWith('blob:') || item.videoUrl.startsWith('data:video/'))) {
-      return {
-        ...item,
+    let sanitized = { ...item };
+    if (sanitized.videoUrl && (sanitized.videoUrl.startsWith('blob:') || sanitized.videoUrl.startsWith('data:video/'))) {
+      sanitized = {
+        ...sanitized,
         hasCustomVideo: true,
         videoUrl: undefined
       };
     }
-    return item;
+    // If thumbnail is a large base64 data URL, replace with an optimized URL to prevent clipboard overflow
+    if (sanitized.videoThumbnail && sanitized.videoThumbnail.startsWith('data:image/')) {
+      sanitized.videoThumbnail = 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?q=80&w=1400&auto=format&fit=crop';
+    }
+    // If videoFrames contain base64 data URLs, replace with lightweight URLs to keep JSON size under 2KB
+    if (sanitized.videoFrames && sanitized.videoFrames.length > 0) {
+      const fallbackFrames = [
+        'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?q=80&w=1400&auto=format&fit=crop',
+        'https://images.unsplash.com/photo-1554118811-1e0d58224f24?q=80&w=1200&auto=format&fit=crop',
+        'https://images.unsplash.com/photo-1442512595331-e89e73853f31?q=80&w=1200&auto=format&fit=crop'
+      ];
+      sanitized.videoFrames = sanitized.videoFrames.map((f, i) =>
+        f.startsWith('data:image/') ? fallbackFrames[i % fallbackFrames.length] : f
+      );
+    }
+    return sanitized;
   };
 
   const activeVideosJson = React.useMemo(() => {
