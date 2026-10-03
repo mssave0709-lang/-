@@ -25,6 +25,8 @@ export interface PortfolioItem {
   targetAudience?: string; // 송출 공간 추천 및 타겟 고객 가이드
   isDeleted?: boolean; // 휴지통 보관 여부 (1차 삭제)
   deletedAt?: string; // 휴지통 이동 일시
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface SimpleInquiryForm {

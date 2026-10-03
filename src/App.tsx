@@ -87,6 +87,19 @@ export default function App() {
           cloudItems.push(docSnap.data() as PortfolioItem);
         });
 
+        // Maintain curated showcase order, with new custom items properly ordered
+        const defaultOrderMap = new Map<string, number>();
+        DEFAULT_PORTFOLIO_ITEMS.forEach((item, idx) => {
+          defaultOrderMap.set(item.id, idx);
+        });
+
+        cloudItems.sort((a, b) => {
+          const orderA = defaultOrderMap.has(a.id) ? defaultOrderMap.get(a.id)! : 999;
+          const orderB = defaultOrderMap.has(b.id) ? defaultOrderMap.get(b.id)! : 999;
+          if (orderA !== orderB) return orderA - orderB;
+          return (b.updatedAt || '').localeCompare(a.updatedAt || '');
+        });
+
         // Merge with any custom in-memory IndexedDB video blobs
         setPortfolioItems((prev) => {
           return cloudItems.map((cItem) => {
