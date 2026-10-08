@@ -2,7 +2,7 @@ import React from 'react';
 import { ExternalLink, MapPin, Navigation } from 'lucide-react';
 
 export const NaverMapSection: React.FC = () => {
-  const naverMapUrl = 'https://map.naver.com/p/search/%EA%B0%95%EC%9B%90%ED%8A%B9%EB%B3%84%EC%9E%90%EC%B9%98%EB%8F%84%20%EC%B9%98%EC%95%85%EB%A1%9C%201719';
+  const naverMapUrl = 'https://map.naver.com/p/search/%EA%B0%95%EC%9B%90%ED%8A%B9%EB%B3%84%EC%9E%90%EC%B9%98%EB%8F%84%20%EC%9B%90%EC%A3%BC%EC%8B%9C%20%EC%B9%98%EC%95%85%EB%A1%9C%201719';
 
   return (
     <div className="mb-8 w-full">
@@ -23,8 +23,8 @@ export const NaverMapSection: React.FC = () => {
                   네이버 지도
                 </span>
               </div>
-              <p className="text-[11px] text-zinc-500 truncate" title="강원특별자치도 치악로 1719, 2층">
-                강원특별자치도 치악로 1719, 2층 (오프라인 매장/스튜디오)
+              <p className="text-[11px] text-zinc-500 truncate" title="강원특별자치도 원주시 치악로 1719, 2층 강원필링라이프">
+                강원특별자치도 원주시 치악로 1719, 2층 강원필링라이프
               </p>
             </div>
           </div>
@@ -397,7 +397,7 @@ export const NaverMapSection: React.FC = () => {
           <div className="flex items-center gap-1.5 font-medium">
             <MapPin className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
             <span className="font-bold text-zinc-900">도로명 주소:</span>
-            <span>강원특별자치도 치악로 1719, 2층 강원필링라이프</span>
+            <span>강원특별자치도 원주시 치악로 1719, 2층 강원필링라이프</span>
           </div>
           <span className="text-[11px] text-zinc-500">
             * 방문 상담 및 현장 미팅은 사전 예약제로 진행됩니다.

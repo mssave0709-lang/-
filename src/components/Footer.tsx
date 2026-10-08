@@ -55,7 +55,7 @@ export const Footer: React.FC<FooterProps> = ({ onTabChange, onOpenAdmin }) => {
             </p>
             <address className="not-italic text-xs sm:text-sm text-zinc-600 flex items-center gap-1.5 font-medium">
               <MapPin className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
-              <span>강원특별자치도 치악로 1719, 2층 강원 필링 라이프</span>
+              <span>강원특별자치도 원주시 치악로 1719, 2층 강원필링라이프</span>
             </address>
           </div>
 
